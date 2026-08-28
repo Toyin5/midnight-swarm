@@ -52,17 +52,71 @@ Public: pseudonymous drone/mission IDs, event type, proof result, and the minimu
 
 ## Repository Status
 
-The application scaffold and runnable setup are not committed yet. The repository currently contains agent and skill definitions plus the project guidance in [`AGENT.md`](./AGENT.md).
+The runnable scaffold contains two npm workspaces:
 
-Once the stack is scaffolded, this section should contain the exact install, local devnet, test, and demo commands—verified on a clean checkout.
+- `contract/`: Compact `0.23` checkpoint contract and simulator tests.
+- `web/`: React, Vite, Tailwind, shadcn-style components, and deterministic mission dashboard.
+
+The dashboard runs in mock mode by default. Local and preprod endpoint configuration is ready for the later wallet/provider integration.
+
+## Prerequisites
+
+- Node.js 24.11.1 or newer.
+- npm 11 or newer.
+- Docker with Compose v2 for the local Midnight services.
+- [Compact devtools](https://github.com/midnightntwrk/compact/releases) with toolchain `0.31.1`.
+
+Install or select the compiler toolchain:
+
+```bash
+compact update 0.31.1
+```
+
+## Run the Demo
+
+```bash
+npm install
+npm run dev
+```
+
+Open the Vite URL, select **Start mission**, and watch the deterministic three-drone proof timeline. It finishes with two verified checkpoints, one rejected claim, and no private coordinates in UI state.
+
+## Verify the Project
+
+```bash
+npm run contract:compile
+npm test
+npm run build
+npm run lint
+docker compose config --quiet
+```
+
+The first Compact compilation may download proving parameters.
+
+## Midnight Environments
+
+Mock mode requires no blockchain services. To start the local node, indexer, and proof server:
+
+```bash
+npm run midnight:up
+npm run midnight:down
+```
+
+Copy `.env.local.example` or `.env.preprod.example` to `.env` to show the intended target in the dashboard. Preprod uses the public node/indexer endpoints with a local proof server:
+
+```bash
+docker compose up -d --wait proof-server
+```
+
+These configurations contain no wallet secrets. Contract deployment and Lace integration are intentionally deferred.
 
 ## Development Priorities
 
-1. Prove one private `checkpoint reached` claim in Compact.
-2. Test valid and invalid private inputs.
-3. Submit and read the public mission event on a local Midnight environment.
-4. Connect the smallest useful operator dashboard.
-5. Rehearse a short, deterministic demo before adding more event types.
+1. Connect the Compact contract to a local Midnight provider.
+2. Deploy and read public mission state locally.
+3. Add Lace wallet support for preprod.
+4. Replace mock submissions while retaining the deterministic demo fallback.
+5. Rehearse the demo before adding more event types.
 
 ## Optional Midnight Development Tools
 

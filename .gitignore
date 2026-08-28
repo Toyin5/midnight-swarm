@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.local.example
+!.env.preprod.example
+contract/src/managed/
+.midnight-state.json
+*.log

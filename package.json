@@ -1,0 +1,33 @@
+{
+  "name": "midnight-swarm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "contract",
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace web",
+    "build": "npm run build --workspace contract && npm run build --workspace web",
+    "test": "npm run compact --workspace contract && npm run test --workspaces --if-present",
+    "lint": "eslint contract/src web/src",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "contract:compile": "npm run compact --workspace contract",
+    "midnight:up": "docker compose up -d --wait",
+    "midnight:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.8.4",
+    "typescript-eslint": "^8.61.0"
+  },
+  "engines": {
+    "node": ">=24.11.1"
+  }
+}

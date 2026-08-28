@@ -1,0 +1,58 @@
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+export ledger checkpointCommitment: Bytes<32>;
+export ledger authorizedDroneCommitment: Bytes<32>;
+export ledger checkpointReached: Boolean;
+export ledger verifiedProofCount: Counter;
+
+constructor(_checkpointCommitment: Bytes<32>, _authorizedDroneCommitment: Bytes<32>) {
+  checkpointCommitment = disclose(_checkpointCommitment);
+  authorizedDroneCommitment = disclose(_authorizedDroneCommitment);
+  checkpointReached = false;
+}
+
+export circuit proveCheckpoint(
+  x: Uint<32>,
+  y: Uint<32>,
+  minX: Uint<32>,
+  maxX: Uint<32>,
+  minY: Uint<32>,
+  maxY: Uint<32>,
+  droneSecret: Bytes<32>
+): [] {
+  assert(!checkpointReached, "Checkpoint already verified");
+  assert(minX <= maxX && minY <= maxY, "Invalid checkpoint bounds");
+  assert(
+    checkpointCommitment == checkpointKey(minX, maxX, minY, maxY),
+    "Checkpoint commitment mismatch"
+  );
+  assert(authorizedDroneCommitment == droneKey(droneSecret), "Unauthorized drone");
+  assert(x >= minX && x <= maxX && y >= minY && y <= maxY, "Checkpoint not reached");
+
+  checkpointReached = true;
+  verifiedProofCount.increment(1);
+}
+
+export circuit checkpointKey(
+  minX: Uint<32>,
+  maxX: Uint<32>,
+  minY: Uint<32>,
+  maxY: Uint<32>
+): Bytes<32> {
+  return persistentHash<Vector<5, Bytes<32>>>([
+    pad(32, "midnight-swarm:checkpoint:"),
+    minX as Bytes<32>,
+    maxX as Bytes<32>,
+    minY as Bytes<32>,
+    maxY as Bytes<32>
+  ]);
+}
+
+export circuit droneKey(droneSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "midnight-swarm:drone:"),
+    droneSecret
+  ]);
+}
