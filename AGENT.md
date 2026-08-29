@@ -10,11 +10,10 @@ Do not build flight control, real drone networking, computer vision, or producti
 
 ## Product Flow
 
-1. An operator creates a mission and assigns a checkpoint or sector to a drone.
-2. The simulated drone holds private evidence such as coordinates or sensor readings.
-3. A Compact contract verifies a claim derived from that evidence, such as `checkpoint reached`.
-4. Midnight records only the drone identifier, mission event, proof result, and timestamp/block reference needed by the public dashboard.
-5. The dashboard updates mission progress without revealing the private evidence.
+1. ROS generates private evidence for `MS-01` and sends only `[x, y]` to the internal bridge.
+2. The bridge owns checkpoint bounds, credentials, wallet state, deployments, and proof submission.
+3. Three Compact contracts produce the deterministic success, rejection, success storyline.
+4. The browser reads only the public manifest and public indexer state.
 
 ## Privacy Invariants
 
@@ -36,14 +35,12 @@ Implement the thinnest end-to-end vertical slice:
 
 Add more event types only after that path works reliably.
 
-## Suggested Shape
+## Repository Boundaries
 
-Keep boundaries simple and adjust them to the scaffold selected by the team:
-
-- `contracts/`: Compact contract and contract tests.
-- `web/`: dashboard and Midnight wallet/provider integration.
-- `simulator/`: deterministic private drone evidence and event submission, only if it cannot live cleanly in the web app.
-- `docs/`: architecture, demo script, and judging notes when they become necessary.
+- `contract/`: Compact contract and tests.
+- `bridge/`: the only wallet, deployment, credential, and proof-submission service.
+- `ros2_ws/`: synthetic private evidence and ROS visualization.
+- `web/`: read-only Mock/Local dashboard; never add wallet keys or private evidence.
 
 Prefer existing repository patterns and installed dependencies. Avoid adding services, databases, queues, abstractions, or deployment infrastructure unless the demo requires them.
 
@@ -55,6 +52,7 @@ Prefer existing repository patterns and installed dependencies. Avoid adding ser
 - The dashboard clearly distinguishes pending, verified, and failed events.
 - A teammate can run the demo from the README.
 - Tests cover the contract's valid and invalid claim paths.
+- The live path ends at `true, false, true` ledger state and 67% dashboard completion.
 
 ## Working Rules
 

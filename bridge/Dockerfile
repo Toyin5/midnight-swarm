@@ -23,6 +23,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/managed ./managed
 COPY bridge/server.mjs ./server.mjs
 COPY bridge/wallet.mjs ./wallet.mjs
+COPY bridge/protocol.mjs ./protocol.mjs
 
 ENV BRIDGE_PORT=3001
 EXPOSE 3001

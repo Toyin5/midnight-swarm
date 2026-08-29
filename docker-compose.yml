@@ -9,13 +9,18 @@ services:
     restart: unless-stopped
     environment:
       BRIDGE_PORT: '3001'
-      CHECKPOINT_MIN_X: '40'
-      CHECKPOINT_MAX_X: '60'
-      CHECKPOINT_MIN_Y: '70'
-      CHECKPOINT_MAX_Y: '90'
       DRONE_SECRET_HEX: '${MIDNIGHT_DRONE_SECRET_HEX:-}'
+      MISSION_MANIFEST_PATH: '/public/mission-manifest.json'
+    volumes:
+      - ./web/public:/public
     healthcheck:
-      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 5s
       timeout: 3s
       retries: 120

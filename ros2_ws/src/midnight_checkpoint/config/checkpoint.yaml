@@ -14,7 +14,8 @@ midnight_bridge_forwarder:
     evidence_topic: /midnight/private_checkpoint_evidence
     result_topic: /midnight/checkpoint_result
     bridge_url: http://midnight-bridge:3001/checkpoint
-    timeout_seconds: 30.0
+    timeout_seconds: 180.0
+    max_attempts: 3
 
 synthetic_pose_publisher:
   ros__parameters:

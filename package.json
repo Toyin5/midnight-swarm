@@ -4,21 +4,20 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "bridge",
     "contract",
-    "runner",
     "web"
   ],
   "scripts": {
     "dev": "npm run dev --workspace web",
-    "build": "npm run build --workspace contract && npm run build --workspace runner && npm run build --workspace web",
+    "build": "npm run build --workspace contract && npm run build --workspace bridge && npm run build --workspace web",
     "test": "npm run compact --workspace contract && npm run test --workspaces --if-present",
-    "lint": "eslint contract/src runner/src web/src",
+    "lint": "eslint bridge contract/src web/src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "contract:compile": "npm run compact --workspace contract",
-    "live": "npm run midnight:up && npm run contract:compile && npm run live:mission && npm run dev",
-    "live:mission": "npm run live --workspace runner",
-    "midnight:up": "docker compose up -d --wait",
+    "live": "docker compose up -d --build --wait midnight-bridge ros-simulator && npm run dev",
+    "midnight:up": "docker compose up -d --wait node indexer proof-server",
     "midnight:down": "docker compose down"
   },
   "devDependencies": {

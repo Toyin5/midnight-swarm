@@ -129,7 +129,7 @@ export function App() {
     <div className="min-h-screen bg-[#06100f] text-slate-200">
       <div className="noise min-h-screen">
         <header className="border-b border-white/7 bg-[#071210]/85 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <div className="grid h-9 w-9 place-items-center rounded-lg border border-emerald-300/20 bg-emerald-300/8">
                 <Satellite className="h-4.5 w-4.5 text-emerald-300" />
@@ -141,7 +141,7 @@ export function App() {
                 <h1 className="text-sm font-semibold tracking-wide text-white">Swarm Command</h1>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center justify-between gap-2 sm:w-auto">
               <ConnectionBadge mode={mode} status={live.status} />
               <div className="flex rounded-md border border-white/10 bg-white/4 p-0.5">
                 {(['mock', 'local'] as const).map((target) => (

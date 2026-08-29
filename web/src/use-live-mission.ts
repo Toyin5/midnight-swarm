@@ -25,6 +25,7 @@ export function useLiveMission(enabled: boolean) {
     let connected = 0;
     let failed = 0;
     let lastUpdate = Date.now();
+    let setupStage = 'manifest';
 
     queueMicrotask(() => {
       if (cancelled) return;
@@ -43,17 +44,20 @@ export function useLiveMission(enabled: boolean) {
         const nextManifest = parseMissionManifest(value);
         setManifest(nextManifest);
         setState(liveInitialState(nextManifest));
-        const [{ indexerPublicDataProvider }, { ledger }] = await Promise.all([
-          import('@midnight-ntwrk/midnight-js-indexer-public-data-provider'),
-          import('../../contract/src/managed/checkpoint/contract/index.js'),
-        ]);
+        setupStage = 'contract module';
+        const { ledger } = await import('../../contract/src/managed/checkpoint/contract/index.js');
+        setupStage = 'indexer module';
+        const { indexerPublicDataProvider } =
+          await import('@midnight-ntwrk/midnight-js-indexer-public-data-provider');
         if (cancelled) return;
+        setupStage = 'provider';
         const provider = indexerPublicDataProvider(
           networkConfig.indexerUrl,
           networkConfig.indexerWsUrl,
           globalThis.WebSocket as unknown as Parameters<typeof indexerPublicDataProvider>[2],
         );
 
+        setupStage = 'subscriptions';
         for (const contract of nextManifest.contracts) {
           const address = contract.address as Parameters<
             typeof provider.contractStateObservable
@@ -101,7 +105,10 @@ export function useLiveMission(enabled: boolean) {
         cleanups.push(() => window.clearInterval(manifestTimer));
       })
       .catch(() => {
-        if (!cancelled) setStatus('unconfigured');
+        if (!cancelled) {
+          console.warn(`Live connection failed during ${setupStage}`);
+          setStatus(setupStage === 'manifest' ? 'unconfigured' : 'offline');
+        }
       });
 
     return () => {

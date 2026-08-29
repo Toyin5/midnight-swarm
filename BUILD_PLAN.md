@@ -8,13 +8,14 @@
 - [x] Configure local and preprod environments.
 - [x] Verify responsive desktop and mobile layouts.
 - [x] Pass build, test, lint, formatting, and Docker configuration checks.
+- [x] Integrate the synthetic ROS checkpoint flow with the live dashboard.
 
 ## Next Milestone: Live Local Demo
 
-- [x] Add a private `runner/` workspace that owns all private drone evidence.
+- [x] Use `bridge/` as the single wallet, deployment, and proof-submission workspace.
 - [x] Deploy three instances of the existing one-checkpoint contract.
 - [x] Generate a gitignored public mission manifest containing only mission metadata and contract addresses.
-- [x] Submit a deterministic success, rejection, success sequence from the runner.
+- [x] Submit ROS success, local rejection, and local success through the bridge.
 - [x] Add a visible Mock/Local mode switch to the dashboard.
 - [x] Subscribe to all three contracts through the Midnight indexer.
 - [x] Label verified ledger results `ON-CHAIN` and rejected attempts `LOCAL`.
@@ -54,9 +55,9 @@
 
 ## Live Demo Acceptance Checklist
 
-- [ ] One command prepares and runs the local live demo.
-- [ ] Two proofs verify on-chain.
-- [ ] One proof rejects without changing ledger state.
-- [ ] The dashboard updates without receiving private evidence.
-- [ ] Mock mode remains usable when Midnight services are unavailable.
-- [ ] Build, tests, lint, Docker validation, and responsive visual QA pass.
+- [x] One command prepares and runs the local live demo.
+- [x] Two proofs verify on-chain.
+- [x] One proof rejects without changing ledger state.
+- [x] The dashboard updates without receiving private evidence.
+- [x] Mock mode remains usable when Midnight services are unavailable.
+- [x] Build, tests, lint, Docker validation, and responsive visual QA pass.

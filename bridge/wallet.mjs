@@ -1,100 +1,92 @@
+import { Buffer } from 'node:buffer';
+import { getNetworkId, setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import * as ledger from '@midnight-ntwrk/midnight-js-protocol/ledger';
 import {
-  DustSecretKey,
-  LedgerParameters,
-  ZswapSecretKeys,
-} from '@midnight-ntwrk/midnight-js-protocol/ledger';
-import { FluentWalletBuilder } from '@midnight-ntwrk/testkit-js';
+  createKeystore,
+  DustWallet,
+  HDWallet,
+  NoOpTransactionHistoryStorage,
+  PublicKey,
+  Roles,
+  ShieldedWallet,
+  UnshieldedWallet,
+  WalletFacade,
+} from '@midnight-ntwrk/wallet-sdk';
 import * as Rx from 'rxjs';
 
-const DUST_OPTIONS = {
-  ledgerParams: LedgerParameters.initialParameters(),
-  additionalFeeOverhead: 1_000n,
-  feeBlocksMargin: 5,
-};
+const GENESIS_SEED = '0000000000000000000000000000000000000000000000000000000000000001';
 
-function isComplete(progress) {
-  return Boolean(progress && typeof progress.isStrictlyComplete === 'function' && progress.isStrictlyComplete());
+function deriveWalletKeys() {
+  const result = HDWallet.fromSeed(Buffer.from(GENESIS_SEED, 'hex'));
+  if (result.type !== 'seedOk') throw new Error('GENESIS_WALLET_INVALID');
+  const derived = result.hdWallet
+    .selectAccount(0)
+    .selectRoles([Roles.Zswap, Roles.NightExternal, Roles.Dust])
+    .deriveKeysAt(0);
+  result.hdWallet.clear();
+  if (derived.type !== 'keysDerived') throw new Error('WALLET_KEY_DERIVATION_FAILED');
+  return derived.keys;
 }
 
-function bounded(observable, label, timeoutMs = 300_000) {
-  return Rx.firstValueFrom(
-    observable.pipe(
-      Rx.timeout({
-        each: timeoutMs,
-        with: () => Rx.throwError(() => new Error(`${label} timed out after ${timeoutMs}ms`)),
-      }),
-    ),
-  );
-}
-
-export async function buildGenesisWallet(config) {
-  const genesisSeed = BigInt(1).toString(16).padStart(64, '0');
-  const { wallet, seeds, keystore } = await FluentWalletBuilder.forEnvironment(config)
-    .withDustOptions(DUST_OPTIONS)
-    .withSeed(genesisSeed)
-    .buildWithoutStarting();
-  const shieldedSecretKeys = ZswapSecretKeys.fromSeed(seeds.shielded);
-  const dustSecretKey = DustSecretKey.fromSeed(seeds.dust);
-  await wallet.start(shieldedSecretKeys, dustSecretKey);
-  await bounded(
-    wallet.state().pipe(
-      Rx.filter(
-        (state) =>
-          isComplete(state.shielded.state.progress) &&
-          isComplete(state.unshielded.progress) &&
-          isComplete(state.dust.state.progress),
+export async function createLocalWallet(config) {
+  setNetworkId('undeployed');
+  const keys = deriveWalletKeys();
+  const networkId = getNetworkId();
+  const shieldedSecretKeys = ledger.ZswapSecretKeys.fromSeed(keys[Roles.Zswap]);
+  const dustSecretKey = ledger.DustSecretKey.fromSeed(keys[Roles.Dust]);
+  const unshieldedKeystore = createKeystore(keys[Roles.NightExternal], networkId);
+  const wallet = await WalletFacade.init({
+    configuration: {
+      networkId,
+      indexerClientConnection: {
+        indexerHttpUrl: config.indexer,
+        indexerWsUrl: config.indexerWS,
+      },
+      provingServerUrl: new URL(config.proofServer),
+      relayURL: new URL(config.nodeWS),
+      txHistoryStorage: new NoOpTransactionHistoryStorage(),
+      costParameters: { additionalFeeOverhead: 300_000_000_000_000n, feeBlocksMargin: 5 },
+    },
+    shielded: (childConfig) => ShieldedWallet(childConfig).startWithSecretKeys(shieldedSecretKeys),
+    unshielded: (childConfig) =>
+      UnshieldedWallet(childConfig).startWithPublicKey(PublicKey.fromKeyStore(unshieldedKeystore)),
+    dust: (childConfig) =>
+      DustWallet(childConfig).startWithSecretKey(
+        dustSecretKey,
+        ledger.LedgerParameters.initialParameters().dust,
       ),
-    ),
-    'Local wallet synchronization',
+  });
+  await wallet.start(shieldedSecretKeys, dustSecretKey);
+  const state = await wallet.waitForSyncedState();
+  const unregistered = state.unshielded.availableCoins.filter(
+    (coin) => !coin.meta?.registeredForDustGeneration,
   );
-  return { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore: keystore };
-}
-
-export async function ensureSpendableDust(context) {
-  const state = await bounded(
-    context.wallet.state().pipe(Rx.filter((value) => isComplete(value.unshielded.progress))),
-    'Unshielded wallet synchronization',
-  );
-  const unregistered =
-    state.unshielded?.availableCoins.filter(
-      (coin) => coin.meta.registeredForDustGeneration === false,
-    ) ?? [];
-
   if (unregistered.length > 0) {
-    const recipe = await context.wallet.registerNightUtxosForDustGeneration(
+    const recipe = await wallet.registerNightUtxosForDustGeneration(
       unregistered,
-      context.unshieldedKeystore.getPublicKey(),
-      (payload) => context.unshieldedKeystore.signData(payload),
+      unshieldedKeystore.getPublicKey(),
+      (payload) => unshieldedKeystore.signData(payload),
     );
-    const finalized = await context.wallet.finalizeRecipe(recipe);
-    await context.wallet.submitTransaction(finalized);
+    await wallet.submitTransaction(await wallet.finalizeRecipe(recipe));
   }
-
-  await bounded(
-    context.wallet.state().pipe(
-      Rx.filter((value) => (value.dust?.availableCoins.length ?? 0) >= 1),
+  await Rx.firstValueFrom(
+    wallet.state().pipe(
+      Rx.filter((next) => next.isSynced && next.dust.balance(new Date()) > 0n),
+      Rx.timeout({ first: 300_000 }),
     ),
-    'Spendable DUST generation',
-    180_000,
   );
+  return { wallet, shieldedSecretKeys, dustSecretKey, unshieldedKeystore };
 }
 
-export async function withDustRetry(attempt, timeoutMs = 180_000, intervalMs = 5_000) {
+export async function withDustRetry(attempt, timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
-  for (let attemptNumber = 1; ; attemptNumber += 1) {
+  while (true) {
     try {
       return await attempt();
     } catch (error) {
-      if (!(error instanceof Error) || !/could not balance dust/i.test(error.message)) {
-        throw error;
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `DUST was still not spendable after ${timeoutMs}ms (${attemptNumber} attempts): ${error.message}`,
-        );
-      }
-      console.info(`DUST not spendable yet (attempt ${attemptNumber}); retrying in ${intervalMs}ms`);
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      if (!(error instanceof Error) || !/could not balance dust/i.test(error.message)) throw error;
+      if (Date.now() >= deadline) throw new Error('DUST_NOT_READY');
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
     }
   }
 }

@@ -49,9 +49,8 @@ class CheckpointMonitor(Node):
         if not self._detector.observe(x, y):
             return
 
-        bounds = self._detector.bounds
         evidence = UInt32MultiArray()
-        evidence.data = [x, y, bounds.min_x, bounds.max_x, bounds.min_y, bounds.max_y]
+        evidence.data = [x, y]
         self._evidence_publisher.publish(evidence)
         self.get_logger().info("Checkpoint evidence ready for the local Midnight bridge")
 

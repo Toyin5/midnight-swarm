@@ -1,136 +1,85 @@
 import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { deployContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
-import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { CompiledContract } from '@midnight-ntwrk/midnight-js-protocol/compact-js';
-import { ttlOneHour } from '@midnight-ntwrk/midnight-js-utils';
 import { WebSocket } from 'ws';
-import {
-  CostModel,
-  QueryContext,
-  createConstructorContext,
-  sampleContractAddress,
-} from '@midnight-ntwrk/compact-runtime';
-import { Contract } from './managed/checkpoint/contract/index.js';
-import { buildGenesisWallet, ensureSpendableDust, withDustRetry } from './wallet.mjs';
+import { Contract, ledger, pureCircuits } from './managed/checkpoint/contract/index.js';
+import { BridgeError, createBridgeServer } from './protocol.mjs';
+import { createLocalWallet, withDustRetry } from './wallet.mjs';
 
 globalThis.WebSocket = WebSocket;
-setNetworkId('undeployed');
 
-const UINT32_MAX = 2 ** 32 - 1;
 const port = Number.parseInt(process.env.BRIDGE_PORT ?? '3001', 10);
 const managedPath = '/app/managed/checkpoint';
-const expectedBounds = [
-  Number.parseInt(process.env.CHECKPOINT_MIN_X ?? '40', 10),
-  Number.parseInt(process.env.CHECKPOINT_MAX_X ?? '60', 10),
-  Number.parseInt(process.env.CHECKPOINT_MIN_Y ?? '70', 10),
-  Number.parseInt(process.env.CHECKPOINT_MAX_Y ?? '90', 10),
-];
+const manifestPath = process.env.MISSION_MANIFEST_PATH ?? '/public/mission-manifest.json';
 const config = {
-  walletNetworkId: 'undeployed',
-  networkId: 'undeployed',
   indexer: process.env.MN_INDEXER_URL ?? 'http://indexer:8088/api/v4/graphql',
   indexerWS: process.env.MN_INDEXER_WS ?? 'ws://indexer:8088/api/v4/graphql/ws',
-  node: process.env.MN_NODE_URL ?? 'http://node:9944',
   nodeWS: process.env.MN_NODE_WS ?? 'ws://node:9944',
   proofServer: process.env.MN_PROOF_SERVER_URL ?? 'http://proof-server:6300',
-  faucet: '',
 };
 
+const droneDefinitions = [
+  { droneId: 'MS-01', bounds: [40n, 60n, 70n, 90n] },
+  { droneId: 'MS-07', bounds: [18n, 38n, 22n, 42n], point: [74n, 30n] },
+  { droneId: 'MS-12', bounds: [18n, 38n, 22n, 42n], point: [27n, 33n] },
+].map((definition) => ({ ...definition, secret: secretFor(definition.droneId) }));
+
 let readiness = { status: 'initializing', mode: 'local-chain' };
-let deployedContract;
+let providers;
+let walletContext;
+let deployments = new Map();
+let manifest;
 let submitInProgress = false;
+let ms01Result;
+let initializationPhase = 'WALLET';
 
-function droneSecret() {
-  const value = process.env.DRONE_SECRET_HEX;
-  if (!value) return Uint8Array.from(randomBytes(32));
-  if (!/^[0-9a-fA-F]{64}$/.test(value)) {
-    throw new Error('DRONE_SECRET_HEX must contain exactly 64 hexadecimal characters');
-  }
-  return Uint8Array.from(Buffer.from(value, 'hex'));
+function secretFor(droneId) {
+  const configured = droneId === 'MS-01' ? process.env.DRONE_SECRET_HEX : undefined;
+  if (!configured) return Uint8Array.from(randomBytes(32));
+  if (!/^[0-9a-fA-F]{64}$/.test(configured)) throw new Error('DRONE_SECRET_INVALID');
+  return Uint8Array.from(Buffer.from(configured, 'hex'));
 }
 
-function parseEvidence(body) {
-  const value = JSON.parse(body);
-  if (!Array.isArray(value.evidence) || value.evidence.length !== 6) {
-    throw new Error('evidence must contain [x, y, minX, maxX, minY, maxY]');
-  }
-  if (!value.evidence.every(Number.isInteger)) throw new Error('evidence values must be integers');
-  if (value.evidence.some((item) => item < 0 || item > UINT32_MAX)) {
-    throw new Error('evidence values must fit Compact Uint<32>');
-  }
-  if (!value.evidence.slice(2).every((item, index) => item === expectedBounds[index])) {
-    throw new Error('checkpoint bounds do not match the deployed commitment');
-  }
-  return value.evidence.map(BigInt);
-}
-
-async function commitmentContext(contract) {
-  const placeholder = new Uint8Array(32);
-  const initial = await contract.initialState(
-    createConstructorContext({}, '0'.repeat(64)),
-    placeholder,
-    placeholder,
-  );
-  return {
-    currentPrivateState: initial.currentPrivateState,
-    currentZswapLocalState: initial.currentZswapLocalState,
-    costModel: CostModel.initialCostModel(),
-    currentQueryContext: new QueryContext(
-      initial.currentContractState.data,
-      sampleContractAddress(),
-    ),
-  };
+async function writeManifest() {
+  await mkdir(dirname(manifestPath), { recursive: true });
+  const temporaryPath = `${manifestPath}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 });
+  await rename(temporaryPath, manifestPath);
 }
 
 async function initialize() {
-  console.info('Synchronizing the pre-funded local genesis wallet');
-  const wallet = await buildGenesisWallet(config);
-  await ensureSpendableDust(wallet);
-  console.info('Local wallet has spendable DUST');
-
-  const secret = droneSecret();
-  const contract = new Contract({});
-  const context = await commitmentContext(contract);
-  const checkpointCommitment = (await contract.circuits.checkpointKey(
-    context,
-    ...expectedBounds.map(BigInt),
-  )).result;
-  const droneCommitment = (await contract.circuits.droneKey(context, secret)).result;
-  if (!(checkpointCommitment instanceof Uint8Array) || checkpointCommitment.length !== 32) {
-    throw new Error('Compact checkpoint commitment did not resolve to Bytes<32>');
-  }
-  if (!(droneCommitment instanceof Uint8Array) || droneCommitment.length !== 32) {
-    throw new Error('Compact drone commitment did not resolve to Bytes<32>');
-  }
-  const zkConfigProvider = new NodeZkConfigProvider(managedPath);
-  const privateStoragePassword = `Local-${randomBytes(16).toString('hex')}!Aa1`;
+  await rm(manifestPath, { force: true });
+  process.stdout.write('Synchronizing local Midnight wallet…\n');
+  walletContext = await createLocalWallet(config);
   const walletProvider = {
-    getCoinPublicKey: () => wallet.shieldedSecretKeys.coinPublicKey,
-    getEncryptionPublicKey: () => wallet.shieldedSecretKeys.encryptionPublicKey,
-    balanceTx: async (transaction, ttl = ttlOneHour()) => {
-      const recipe = await wallet.wallet.balanceUnboundTransaction(
+    getCoinPublicKey: () => walletContext.shieldedSecretKeys.coinPublicKey,
+    getEncryptionPublicKey: () => walletContext.shieldedSecretKeys.encryptionPublicKey,
+    async balanceTx(transaction, ttl) {
+      const recipe = await walletContext.wallet.balanceUnboundTransaction(
         transaction,
         {
-          shieldedSecretKeys: wallet.shieldedSecretKeys,
-          dustSecretKey: wallet.dustSecretKey,
+          shieldedSecretKeys: walletContext.shieldedSecretKeys,
+          dustSecretKey: walletContext.dustSecretKey,
         },
-        { ttl },
+        { ttl: ttl ?? new Date(Date.now() + 30 * 60 * 1000) },
       );
-      return wallet.wallet.finalizeRecipe(recipe);
+      return walletContext.wallet.finalizeRecipe(recipe);
     },
-    submitTx: (transaction) => wallet.wallet.submitTransaction(transaction),
+    submitTx: (transaction) => walletContext.wallet.submitTransaction(transaction),
   };
-  const providers = {
+  const zkConfigProvider = new NodeZkConfigProvider(managedPath);
+  providers = {
     privateStateProvider: levelPrivateStateProvider({
-      privateStateStoreName: 'midnight-swarm-private-state',
-      signingKeyStoreName: 'midnight-swarm-signing-keys',
-      privateStoragePasswordProvider: () => privateStoragePassword,
-      accountId: wallet.unshieldedKeystore.getBech32Address().asString(),
+      privateStateStoreName: 'midnight-swarm-bridge',
+      accountId: walletContext.unshieldedKeystore.getBech32Address().toString(),
+      privateStoragePasswordProvider: () =>
+        process.env.PRIVATE_STATE_PASSWORD ?? 'Local-Devnet-Development-Placeholder-1',
     }),
     publicDataProvider: indexerPublicDataProvider(config.indexer, config.indexerWS),
     zkConfigProvider,
@@ -138,95 +87,167 @@ async function initialize() {
     walletProvider,
     midnightProvider: walletProvider,
   };
-  const compiledContract = CompiledContract.withCompiledFileAssets(
-    CompiledContract.withWitnesses(CompiledContract.make('checkpoint', Contract), {}),
-    managedPath,
+  const compiledContract = CompiledContract.make('checkpoint', Contract).pipe(
+    CompiledContract.withVacantWitnesses,
+    CompiledContract.withCompiledFileAssets(managedPath),
   );
 
-  console.info('Deploying checkpoint contract to the local Midnight node');
-  const deployed = await withDustRetry(() =>
-    deployContract(providers, {
-      compiledContract,
-      args: [checkpointCommitment, droneCommitment],
-    }),
-  );
-  deployedContract = { deployed, secret };
+  process.stdout.write('Deploying three checkpoint contracts…\n');
+  for (const definition of droneDefinitions) {
+    initializationPhase = `DEPLOY_${definition.droneId.replace('-', '_')}`;
+    const [minX, maxX, minY, maxY] = definition.bounds;
+    const deployed = await withDustRetry(() =>
+      deployContract(providers, {
+        compiledContract,
+        args: [
+          pureCircuits.checkpointKey(minX, maxX, minY, maxY),
+          pureCircuits.droneKey(definition.secret),
+        ],
+        privateStateId: `checkpoint-${definition.droneId}`,
+        initialPrivateState: {},
+      }),
+    );
+    deployments.set(definition.droneId, { definition, deployed });
+  }
+
+  initializationPhase = 'MANIFEST';
+  manifest = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    mission: { id: 'MSN-2049', name: 'Silent Horizon', sector: 'Industrial Grid 7' },
+    contracts: [...deployments].map(([droneId, { deployed }]) => ({
+      droneId,
+      address: deployed.deployTxData.public.contractAddress,
+    })),
+    localEvents: [],
+  };
+  await writeManifest();
   readiness = {
     status: 'ready',
     mode: 'local-chain',
-    contractAddress: deployed.deployTxData.public.contractAddress,
+    contracts: manifest.contracts.map(({ droneId, address }) => ({ droneId, address })),
   };
-  console.info('Checkpoint contract deployed and local bridge is ready');
+  process.stdout.write('Midnight bridge ready for ROS evidence.\n');
 }
 
-function respond(response, status, payload) {
-  response.writeHead(status, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(payload));
+async function submitCheckpoint({ droneId, evidence: [x, y] }) {
+  if (ms01Result) return ms01Result;
+  if (readiness.status !== 'ready' && readiness.status !== 'completing') {
+    throw new BridgeError('NOT_READY', 503);
+  }
+  if (submitInProgress) throw new BridgeError('BUSY', 409);
+
+  submitInProgress = true;
+  try {
+    const { definition, deployed } = deployments.get(droneId);
+    const [minX, maxX, minY, maxY] = definition.bounds;
+    const call = await deployed.callTx.proveCheckpoint(
+      x,
+      y,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      definition.secret,
+    );
+    ms01Result = {
+      status: 'verified',
+      source: 'on-chain',
+      droneId,
+      contractAddress: deployed.deployTxData.public.contractAddress,
+      txId: call.public.txId,
+      blockHeight: call.public.blockHeight.toString(),
+    };
+    readiness = { ...readiness, status: 'completing' };
+    setImmediate(() => void completeRemainingMission());
+    return ms01Result;
+  } catch {
+    throw new BridgeError('INVALID_CLAIM', 422);
+  } finally {
+    submitInProgress = false;
+  }
 }
 
-const server = createServer((request, response) => {
-  if (request.method === 'GET' && request.url === '/health') {
-    respond(response, readiness.status === 'ready' ? 200 : 503, readiness);
-    return;
-  }
-  if (request.method !== 'POST' || request.url !== '/checkpoint') {
-    respond(response, 404, { error: 'not found' });
-    return;
-  }
-  if (readiness.status !== 'ready') {
-    respond(response, 503, readiness);
-    return;
-  }
-  if (submitInProgress) {
-    respond(response, 409, { status: 'pending', error: 'checkpoint submission already in progress' });
-    return;
-  }
-
-  let body = '';
-  request.setEncoding('utf8');
-  request.on('data', (chunk) => {
-    body += chunk;
-    if (body.length > 4096) request.destroy();
-  });
-  request.on('end', async () => {
-    submitInProgress = true;
+async function completeRemainingMission() {
+  if (submitInProgress) return;
+  submitInProgress = true;
+  try {
+    const rejected = deployments.get('MS-07');
+    const [failedX, failedY] = rejected.definition.point;
+    const [minX, maxX, minY, maxY] = rejected.definition.bounds;
+    let rejectedLocally = false;
     try {
-      const [x, y, minX, maxX, minY, maxY] = parseEvidence(body);
-      const call = await deployedContract.deployed.callTx.proveCheckpoint(
-        x,
-        y,
+      await rejected.deployed.callTx.proveCheckpoint(
+        failedX,
+        failedY,
         minX,
         maxX,
         minY,
         maxY,
-        deployedContract.secret,
+        rejected.definition.secret,
       );
-      console.info('Checkpoint proof finalized on the local Midnight network');
-      respond(response, 200, {
-        status: 'verified',
-        mode: 'local-chain',
-        contractAddress: readiness.contractAddress,
-        txId: call.public.txId,
-        blockHeight: call.public.blockHeight.toString(),
-      });
-    } catch (error) {
-      const message = String(error.message ?? error);
-      console.warn(`Local Midnight checkpoint transaction failed: ${message}`);
-      if (error instanceof Error && error.stack) console.warn(error.stack);
-      if (error && typeof error === 'object' && 'cause' in error) {
-        console.warn('Checkpoint transaction failure cause:', error.cause);
-      }
-      respond(response, 422, { status: 'failed', error: message });
-    } finally {
-      submitInProgress = false;
+    } catch {
+      rejectedLocally = true;
     }
+    if (!rejectedLocally) throw new Error('REJECTION_UNEXPECTEDLY_VERIFIED');
+    manifest.localEvents.push({
+      id: 'local-MS-07',
+      droneId: 'MS-07',
+      title: 'Checkpoint proof rejected',
+      detail: 'The private claim was rejected before ledger submission.',
+      status: 'failed',
+      timestamp: 'LOCAL',
+      source: 'local',
+    });
+    await writeManifest();
+
+    const verified = deployments.get('MS-12');
+    const [validX, validY] = verified.definition.point;
+    const [validMinX, validMaxX, validMinY, validMaxY] = verified.definition.bounds;
+    await verified.deployed.callTx.proveCheckpoint(
+      validX,
+      validY,
+      validMinX,
+      validMaxX,
+      validMinY,
+      validMaxY,
+      verified.definition.secret,
+    );
+
+    const outcomes = await Promise.all(
+      [...deployments.values()].map(async ({ deployed }) => {
+        const state = await providers.publicDataProvider.queryContractState(
+          deployed.deployTxData.public.contractAddress,
+        );
+        return state ? ledger(state.data).checkpointReached : false;
+      }),
+    );
+    if (outcomes.join(',') !== 'true,false,true') throw new Error('LEDGER_OUTCOME_MISMATCH');
+    readiness = { ...readiness, status: 'ready' };
+    process.stdout.write('Unified ROS mission completed with two verified checkpoints.\n');
+  } catch {
+    readiness = { status: 'failed', mode: 'local-chain', error: 'MISSION_COMPLETION_FAILED' };
+  } finally {
+    submitInProgress = false;
+  }
+}
+
+const server = createBridgeServer({ getHealth: () => readiness, submitCheckpoint });
+server.listen(port, '0.0.0.0', () => {
+  process.stdout.write(`Midnight bridge listening on port ${port}.\n`);
+  void initialize().catch(() => {
+    readiness = {
+      status: 'failed',
+      mode: 'local-chain',
+      error: `${initializationPhase}_FAILED`,
+    };
   });
 });
 
-server.listen(port, '0.0.0.0', () => {
-  console.info(`Midnight bridge listening on port ${port}`);
-  initialize().catch((error) => {
-    readiness = { status: 'failed', mode: 'local-chain', error: String(error.message ?? error) };
-    console.error('Midnight bridge initialization failed');
-  });
-});
+async function shutdown() {
+  server.close();
+  await walletContext?.wallet.stop();
+}
+
+process.once('SIGINT', () => void shutdown());
+process.once('SIGTERM', () => void shutdown());
