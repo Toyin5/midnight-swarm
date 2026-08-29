@@ -5,21 +5,25 @@
   "type": "module",
   "workspaces": [
     "contract",
+    "runner",
     "web"
   ],
   "scripts": {
     "dev": "npm run dev --workspace web",
-    "build": "npm run build --workspace contract && npm run build --workspace web",
+    "build": "npm run build --workspace contract && npm run build --workspace runner && npm run build --workspace web",
     "test": "npm run compact --workspace contract && npm run test --workspaces --if-present",
-    "lint": "eslint contract/src web/src",
+    "lint": "eslint contract/src runner/src web/src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "contract:compile": "npm run compact --workspace contract",
+    "live": "npm run midnight:up && npm run contract:compile && npm run live:mission && npm run dev",
+    "live:mission": "npm run live --workspace runner",
     "midnight:up": "docker compose up -d --wait",
     "midnight:down": "docker compose down"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",

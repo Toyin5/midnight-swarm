@@ -15,7 +15,7 @@ export default tseslint.config(
     rules: reactHooks.configs.flat.recommended.rules,
   },
   {
-    files: ['contract/src/**/*.ts'],
+    files: ['contract/src/**/*.ts', 'runner/src/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
   eslintConfigPrettier,

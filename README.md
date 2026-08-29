@@ -52,9 +52,10 @@ Public: pseudonymous drone/mission IDs, event type, proof result, and the minimu
 
 ## Repository Status
 
-The runnable scaffold contains two npm workspaces:
+The runnable scaffold contains three npm workspaces:
 
 - `contract/`: Compact `0.23` checkpoint contract and simulator tests.
+- `runner/`: local deployment and proof submission; the only workspace that owns private evidence.
 - `web/`: React, Vite, Tailwind, shadcn-style components, and deterministic mission dashboard.
 
 The dashboard runs in mock mode by default. Local and preprod endpoint configuration is ready for the later wallet/provider integration.
@@ -108,7 +109,18 @@ Copy `.env.local.example` or `.env.preprod.example` to `.env` to show the intend
 docker compose up -d --wait proof-server
 ```
 
-These configurations contain no wallet secrets. Contract deployment and Lace integration are intentionally deferred.
+These configurations contain no wallet secrets. Lace integration remains intentionally deferred.
+
+### Run the live local demo
+
+```bash
+cp .env.local.example .env
+npm run live
+```
+
+This starts the local Midnight stack, compiles the contract, deploys three checkpoint contracts, submits the deterministic success/rejection/success sequence, writes the gitignored public mission manifest, and starts the dashboard. Select **Local** if it is not already active.
+
+The browser subscribes to all three contract states through the indexer. Verified results are marked `ON-CHAIN`; the rejected proof is marked `LOCAL` because it never changes ledger state. Contract addresses are public and can be copied from the swarm table. Retry is available for offline, partial, and stale connections.
 
 ## Development Priorities
 

@@ -80,4 +80,3 @@ Most useful plugins for this project:
 - `midnight-verify`: mechanically verify important Compact and SDK claims before the demo.
 
 Do not copy generated examples blindly. Confirm that private inputs remain private and that public ledger fields match the dashboard's needs.
-

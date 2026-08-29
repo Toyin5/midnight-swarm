@@ -10,3 +10,5 @@ coverage/
 contract/src/managed/
 .midnight-state.json
 *.log
+web/public/mission-manifest.json
+**/midnight-level-db/
