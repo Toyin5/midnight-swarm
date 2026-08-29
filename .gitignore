@@ -10,3 +10,13 @@ coverage/
 contract/src/managed/
 .midnight-state.json
 *.log
+__pycache__/
+*.py[cod]
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+demo-output/

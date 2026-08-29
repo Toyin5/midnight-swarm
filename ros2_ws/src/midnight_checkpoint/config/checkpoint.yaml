@@ -1,0 +1,38 @@
+/**:
+  ros__parameters:
+    pose_topic: /drone/private_pose
+    evidence_topic: /midnight/private_checkpoint_evidence
+    units_per_meter: 1
+    required_samples: 3
+    min_x: 40
+    max_x: 60
+    min_y: 70
+    max_y: 90
+
+midnight_bridge_forwarder:
+  ros__parameters:
+    evidence_topic: /midnight/private_checkpoint_evidence
+    result_topic: /midnight/checkpoint_result
+    bridge_url: http://midnight-bridge:3001/checkpoint
+    timeout_seconds: 30.0
+
+synthetic_pose_publisher:
+  ros__parameters:
+    publish_hz: 5.0
+    start_x: 0.0
+    start_y: 0.0
+    start_z: 0.0
+    target_x: 52.0
+    target_y: 81.0
+    target_z: 20.0
+    travel_seconds: 8.0
+
+trajectory_visualizer:
+  ros__parameters:
+    pose_topic: /drone/private_pose
+    result_topic: /midnight/checkpoint_result
+    target_x: 52.0
+    target_y: 81.0
+    target_z: 20.0
+    output_directory: /demo-output
+    animation_fps: 5
