@@ -2,10 +2,56 @@
 name: midnight-swarm-devnet
 
 services:
+  midnight-bridge:
+    build:
+      context: .
+      dockerfile: bridge/Dockerfile
+    restart: unless-stopped
+    environment:
+      BRIDGE_PORT: '3001'
+      DRONE_SECRET_HEX: '${MIDNIGHT_DRONE_SECRET_HEX:-}'
+      MISSION_MANIFEST_PATH: '/public/mission-manifest.json'
+    volumes:
+      - ./web/public:/public
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 10s
+    depends_on:
+      indexer:
+        condition: service_healthy
+      node:
+        condition: service_healthy
+      proof-server:
+        condition: service_healthy
+
+  ros-simulator:
+    build:
+      context: .
+      dockerfile: ros2_ws/Dockerfile
+    init: true
+    restart: unless-stopped
+    environment:
+      ROS_DOMAIN_ID: '42'
+    volumes:
+      - ./demo-output:/demo-output
+    depends_on:
+      midnight-bridge:
+        condition: service_healthy
+    stop_grace_period: 10s
+
   node:
     image: midnightntwrk/midnight-node:1.0.0
     ports:
-      - '9944:9944'
+      - '127.0.0.1:9944:9944'
     environment:
       CFG_PRESET: 'dev'
       SIDECHAIN_BLOCK_BENEFICIARY: '04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e'
@@ -24,7 +70,7 @@ services:
     image: midnightntwrk/indexer-standalone:4.3.3
     restart: on-failure
     ports:
-      - '8088:8088'
+      - '127.0.0.1:8088:8088'
     environment:
       RUST_LOG: 'indexer=info,chain_indexer=info,indexer_api=info,wallet_indexer=info,indexer_common=info,fastrace_opentelemetry=off,info'
       APP__APPLICATION__NETWORK_ID: 'undeployed'
@@ -47,9 +93,9 @@ services:
 
   proof-server:
     image: midnightntwrk/proof-server:8.1.0
-    command: ['midnight-proof-server -v']
+    command: ['midnight-proof-server', '-v']
     ports:
-      - '6300:6300'
+      - '127.0.0.1:6300:6300'
     environment:
       RUST_BACKTRACE: 'full'
     healthcheck:

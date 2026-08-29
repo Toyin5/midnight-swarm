@@ -1,22 +1,33 @@
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import {
   Activity,
   BatteryMedium,
   Check,
   CircleAlert,
   Crosshair,
+  Copy,
   EyeOff,
+  ExternalLink,
   KeyRound,
   Play,
   Radio,
   RefreshCcw,
   Satellite,
   ShieldCheck,
+  WifiOff,
 } from 'lucide-react';
 import { Alert, Badge, Button, Card, Progress, cn } from './components/ui';
 import { networkConfig } from './network';
 import { advanceSimulation, resetSimulation } from './simulator';
-import type { Drone, ProofStatus, SimulationState } from './types';
+import { useLiveMission } from './use-live-mission';
+import type {
+  ConnectionStatus,
+  Drone,
+  MissionContract,
+  NetworkTarget,
+  ProofStatus,
+  SimulationState,
+} from './types';
 
 type Action = { type: 'start' } | { type: 'advance' } | { type: 'reset' };
 
@@ -33,7 +44,12 @@ const proofTone: Record<ProofStatus, string> = {
   failed: 'text-rose-300',
 };
 
-function DroneRow({ drone }: { drone: Drone }) {
+function DroneRow({ drone, contract }: { drone: Drone; contract?: MissionContract }) {
+  const contractLink =
+    contract && networkConfig.explorerUrl
+      ? `${networkConfig.explorerUrl.replace(/\/$/, '')}/contract/${contract.address}`
+      : undefined;
+
   return (
     <div className="grid grid-cols-[1.4fr_1fr_auto] items-center gap-3 border-t border-white/6 px-4 py-3 first:border-0">
       <div className="min-w-0">
@@ -48,6 +64,30 @@ function DroneRow({ drone }: { drone: Drone }) {
           <span className="truncate text-xs text-slate-500">{drone.label}</span>
         </div>
         <p className="mt-1 truncate pl-3.5 text-xs text-slate-400">{drone.assignment}</p>
+        {contract && (
+          <div className="mt-1 flex items-center gap-1 pl-3.5 font-mono text-[9px] text-slate-600">
+            <span>{shortAddress(contract.address)}</span>
+            <button
+              type="button"
+              className="rounded p-1 hover:bg-white/8 hover:text-slate-300"
+              onClick={() => void navigator.clipboard.writeText(contract.address)}
+              aria-label={`Copy ${drone.id} contract address`}
+            >
+              <Copy className="h-3 w-3" />
+            </button>
+            {contractLink && (
+              <a
+                className="rounded p-1 hover:bg-white/8 hover:text-slate-300"
+                href={contractLink}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${drone.id} contract`}
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+        )}
       </div>
       <div>
         <p
@@ -69,22 +109,27 @@ function DroneRow({ drone }: { drone: Drone }) {
 }
 
 export function App() {
-  const [state, dispatch] = useReducer(reducer, undefined, resetSimulation);
+  const [mockState, dispatch] = useReducer(reducer, undefined, resetSimulation);
+  const [mode, setMode] = useState<NetworkTarget>(
+    networkConfig.target === 'mock' ? 'mock' : 'local',
+  );
+  const live = useLiveMission(mode === 'local');
+  const state = mode === 'mock' ? mockState : live.state;
   const progress = Math.round(
     (state.mission.completedCheckpoints / state.mission.totalCheckpoints) * 100,
   );
 
   useEffect(() => {
-    if (!state.running) return;
+    if (mode !== 'mock' || !mockState.running) return;
     const timer = window.setTimeout(() => dispatch({ type: 'advance' }), 700);
     return () => window.clearTimeout(timer);
-  }, [state.running, state.step]);
+  }, [mode, mockState.running, mockState.step]);
 
   return (
     <div className="min-h-screen bg-[#06100f] text-slate-200">
       <div className="noise min-h-screen">
         <header className="border-b border-white/7 bg-[#071210]/85 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-[1500px] items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <div className="grid h-9 w-9 place-items-center rounded-lg border border-emerald-300/20 bg-emerald-300/8">
                 <Satellite className="h-4.5 w-4.5 text-emerald-300" />
@@ -96,12 +141,23 @@ export function App() {
                 <h1 className="text-sm font-semibold tracking-wide text-white">Swarm Command</h1>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge className="hidden border-emerald-300/15 text-emerald-200 sm:inline-flex">
-                <span className="mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
-                systems nominal
-              </Badge>
-              <Badge>{networkConfig.target}</Badge>
+            <div className="flex w-full items-center justify-between gap-2 sm:w-auto">
+              <ConnectionBadge mode={mode} status={live.status} />
+              <div className="flex rounded-md border border-white/10 bg-white/4 p-0.5">
+                {(['mock', 'local'] as const).map((target) => (
+                  <button
+                    key={target}
+                    type="button"
+                    onClick={() => setMode(target)}
+                    className={cn(
+                      'rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500',
+                      mode === target && 'bg-emerald-300/12 text-emerald-200',
+                    )}
+                  >
+                    {target}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </header>
@@ -122,17 +178,26 @@ export function App() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={() => dispatch({ type: 'start' })}
-                disabled={state.running}
-                aria-label="Start mission"
-              >
-                <Play className="h-4 w-4 fill-current" />
-                {state.step > 0 ? 'Run again' : 'Start mission'}
-              </Button>
-              <Button variant="outline" onClick={() => dispatch({ type: 'reset' })}>
-                <RefreshCcw className="h-4 w-4" /> Reset
-              </Button>
+              {mode === 'mock' ? (
+                <>
+                  <Button
+                    onClick={() => dispatch({ type: 'start' })}
+                    disabled={state.running}
+                    aria-label="Start mission"
+                  >
+                    <Play className="h-4 w-4 fill-current" />
+                    {state.step > 0 ? 'Run again' : 'Start mission'}
+                  </Button>
+                  <Button variant="outline" onClick={() => dispatch({ type: 'reset' })}>
+                    <RefreshCcw className="h-4 w-4" /> Reset
+                  </Button>
+                </>
+              ) : (
+                <Button onClick={live.retry} disabled={live.status === 'connecting'}>
+                  <RefreshCcw className="h-4 w-4" />
+                  {live.status === 'connecting' ? 'Connecting' : 'Retry connection'}
+                </Button>
+              )}
             </div>
           </section>
 
@@ -234,7 +299,11 @@ export function App() {
                   <span className="font-mono text-[10px] text-slate-500">3 ACTIVE LINKS</span>
                 </div>
                 {state.drones.map((drone) => (
-                  <DroneRow key={drone.id} drone={drone} />
+                  <DroneRow
+                    key={drone.id}
+                    drone={drone}
+                    contract={live.manifest?.contracts.find((item) => item.droneId === drone.id)}
+                  />
                 ))}
               </Card>
 
@@ -288,7 +357,7 @@ export function App() {
                     <Badge
                       className={item.status === 'verified' ? 'text-emerald-300' : 'text-rose-300'}
                     >
-                      {item.droneId} · {item.status}
+                      {item.droneId} · {item.source ?? 'mock'} · {item.status}
                     </Badge>
                   </div>
                 ))}
@@ -298,6 +367,25 @@ export function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+function shortAddress(address: string) {
+  return `${address.slice(0, 8)}…${address.slice(-6)}`;
+}
+
+function ConnectionBadge({ mode, status }: { mode: NetworkTarget; status: ConnectionStatus }) {
+  if (mode === 'mock') return <Badge>mock</Badge>;
+  const healthy = status === 'connected';
+  return (
+    <Badge className={healthy ? 'border-emerald-300/15 text-emerald-200' : 'text-amber-200'}>
+      {healthy ? (
+        <span className="mr-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+      ) : (
+        <WifiOff className="mr-1.5 h-3 w-3" />
+      )}
+      local · {status}
+    </Badge>
   );
 }
 

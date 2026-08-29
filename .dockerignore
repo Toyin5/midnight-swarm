@@ -1,0 +1,14 @@
+.git
+.idea
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+**/__pycache__
+**/*.egg-info
+contract/src/managed
+node_modules
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
+web/dist
+bridge/node_modules

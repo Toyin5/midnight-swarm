@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "compact": "compact compile src/checkpoint.compact src/managed/checkpoint",
+    "compact": "compact compile src/checkpoint.compact src/managed/checkpoint && node scripts/strip-generated-sourcemap.mjs",
     "build": "npm run compact && tsc --noEmit",
     "test": "vitest run"
   },

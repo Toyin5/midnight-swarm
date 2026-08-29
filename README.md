@@ -1,131 +1,92 @@
-# Privacy-Preserving Drone Swarm Coordination on Midnight
+# Midnight Swarm
 
-A hackathon prototype that lets a drone swarm prove mission progress without publishing sensitive operational data.
+A hackathon prototype that proves drone mission progress on Midnight without publishing
+coordinates, geofence bounds, flight paths, or drone credentials.
 
-## The Problem
+The demo has three pseudonymous drones. ROS supplies private checkpoint evidence for
+`MS-01`; the internal bridge produces an invalid `MS-07` claim and a valid `MS-12` claim.
+The dashboard finishes at two verified proofs, one local rejection, and 67% completion.
 
-Blockchain can provide a shared, tamper-resistant history of drone activity, but recording GPS coordinates, flight paths, camera feeds, or sensor readings exposes confidential mission data. That is unacceptable in military, industrial, infrastructure, and emergency-response settings.
+## Repository
 
-## The Idea
+- `contract/`: Compact 0.23 checkpoint contract and tests.
+- `bridge/`: headless wallet, three deployments, proof submission, and internal HTTP API.
+- `ros2_ws/`: ROS 2 Lyrical synthetic drone, monitor, forwarder, and visualization.
+- `web/`: React/Vite dashboard with Mock and Local modes.
+- `ARCHITECTURE.md`: runtime flow and privacy boundary.
+- `BUILD_PLAN.md`: remaining milestones.
 
-Each drone keeps its raw location and sensor evidence private and generates a zero-knowledge proof for a mission claim such as:
+## Requirements
 
-- checkpoint reached;
-- sector scanned;
-- delivery completed;
-- geofence requirements satisfied.
-
-Only the verified outcome is recorded on Midnight. Operators see trustworthy mission progress without receiving the underlying evidence.
-
-> Instead of putting sensitive swarm data on-chain, we put verifiable proof of mission progress on-chain.
-
-## Hackathon MVP
-
-The first end-to-end demo will focus on one claim: **checkpoint reached**.
-
-1. An operator assigns a checkpoint to a simulated drone.
-2. The drone keeps its coordinates private.
-3. A Compact contract verifies whether the private evidence satisfies the checkpoint rule.
-4. The public mission history records the event and verification result, not the coordinates.
-5. The dashboard shows swarm status, assignments, proof state, alerts, and mission progress.
-
-The demo must include both a valid claim and a failed claim to make the trust boundary visible.
-
-## Architecture
-
-```text
-Private drone/simulator evidence
-              |
-              v
-    Compact proof generation
-              |
-              v
-      Midnight verification
-              |
-              v
-Public mission event -> Operator dashboard
-```
-
-Private: coordinates, paths, imagery, and sensor readings.
-
-Public: pseudonymous drone/mission IDs, event type, proof result, and the minimum ledger metadata needed to order events.
-
-## Repository Status
-
-The runnable scaffold contains two npm workspaces:
-
-- `contract/`: Compact `0.23` checkpoint contract and simulator tests.
-- `web/`: React, Vite, Tailwind, shadcn-style components, and deterministic mission dashboard.
-
-The dashboard runs in mock mode by default. Local and preprod endpoint configuration is ready for the later wallet/provider integration.
-
-## Prerequisites
-
-- Node.js 24.11.1 or newer.
-- npm 11 or newer.
-- Docker with Compose v2 for the local Midnight services.
-- [Compact devtools](https://github.com/midnightntwrk/compact/releases) with toolchain `0.31.1`.
-
-Install or select the compiler toolchain:
+- Node.js 24 and npm 11
+- Docker with Compose v2
+- Compact toolchain 0.31.1 for host-side contract compilation
+- `uv` for ROS-independent Python tests
 
 ```bash
 compact update 0.31.1
+npm install
 ```
 
-## Run the Demo
+## Mock Dashboard
+
+Mock mode needs no Midnight or ROS services:
 
 ```bash
-npm install
 npm run dev
 ```
 
-Open the Vite URL, select **Start mission**, and watch the deterministic three-drone proof timeline. It finishes with two verified checkpoints, one rejected claim, and no private coordinates in UI state.
+Open the Vite URL and select **Start Mission**.
 
-## Verify the Project
+## Live Local Demo
+
+```bash
+cp .env.local.example .env
+npm run live
+```
+
+This builds and starts the Midnight node, indexer, proof server, bridge, and ROS simulator,
+then starts Vite. Select **Local** in the dashboard. The bridge writes the gitignored public
+manifest to `web/public/mission-manifest.json`; the browser reads only contract addresses
+and public indexer state.
+
+The first run can take several minutes while images and proving material are prepared. View
+service progress with:
+
+```bash
+docker compose logs -f midnight-bridge ros-simulator
+```
+
+The ROS visualization is written to `demo-output/midnight-checkpoint.gif` after `MS-01`
+verifies. Stop the application services with `Ctrl+C`, then stop the Compose stack:
+
+```bash
+npm run midnight:down
+```
+
+`npm run midnight:up` starts only the node, indexer, and proof server.
+
+## Validation
 
 ```bash
 npm run contract:compile
 npm test
 npm run build
 npm run lint
+npm run format:check
 docker compose config --quiet
+
+cd ros2_ws/src/midnight_checkpoint
+UV_CACHE_DIR=/tmp/midnight-swarm-uv-cache uv run ruff check midnight_checkpoint test
+UV_CACHE_DIR=/tmp/midnight-swarm-uv-cache uv run pytest
 ```
 
-The first Compact compilation may download proving parameters.
+## Privacy Boundary
 
-## Midnight Environments
+ROS sends `{ "droneId": "MS-01", "evidence": [x, y] }` only over the trusted internal
+Compose network. The bridge owns checkpoint bounds and drone credentials. Its responses,
+manifest, logs, dashboard state, and ledger state contain no raw evidence. The browser is
+read-only and accepts no wallet seed or private key configuration.
 
-Mock mode requires no blockchain services. To start the local node, indexer, and proof server:
-
-```bash
-npm run midnight:up
-npm run midnight:down
-```
-
-Copy `.env.local.example` or `.env.preprod.example` to `.env` to show the intended target in the dashboard. Preprod uses the public node/indexer endpoints with a local proof server:
-
-```bash
-docker compose up -d --wait proof-server
-```
-
-These configurations contain no wallet secrets. Contract deployment and Lace integration are intentionally deferred.
-
-## Development Priorities
-
-1. Connect the Compact contract to a local Midnight provider.
-2. Deploy and read public mission state locally.
-3. Add Lace wallet support for preprod.
-4. Replace mock submissions while retaining the deterministic demo fallback.
-5. Rehearse the demo before adding more event types.
-
-## Optional Midnight Development Tools
-
-The [Midnight Expert marketplace](https://github.com/midnightntwrk/midnight-expert) provides Claude Code plugins for Compact, DApp, wallet, devnet, quality, and verification workflows. The most relevant plugins are listed in [`AGENT.md`](./AGENT.md). They support development but are not dependencies of this application.
-
-## Safety and Scope
-
-This is a coordination and monitoring prototype, not flight-control software. Use simulated or non-sensitive data only. Never commit wallet secrets, real mission coordinates, private imagery, or confidential sensor data.
-
-## Team
-
-Built collaboratively for a hackathon. Add team members, submission links, screenshots, and the final demo video here when available.
+This is synthetic hackathon infrastructure, not flight-control or production security
+software. Never use real mission data or commit wallet credentials.

@@ -1,5 +1,8 @@
 export type ProofStatus = 'idle' | 'generating' | 'verified' | 'failed';
 export type NetworkTarget = 'mock' | 'local' | 'preprod';
+export type ConnectionStatus =
+  'unconfigured' | 'connecting' | 'connected' | 'partial' | 'offline' | 'stale';
+export type EventSource = 'on-chain' | 'local';
 export type DroneStatus = 'ready' | 'in-flight' | 'proving' | 'complete' | 'attention';
 
 export interface Mission {
@@ -28,6 +31,8 @@ export interface ProofEvent {
   detail: string;
   status: ProofStatus;
   timestamp: string;
+  source?: EventSource;
+  contractAddress?: string;
 }
 
 export interface SimulationState {
@@ -37,4 +42,17 @@ export interface SimulationState {
   step: number;
   running: boolean;
   failedProofs: number;
+}
+
+export interface MissionContract {
+  droneId: string;
+  address: string;
+}
+
+export interface MissionManifest {
+  version: 1;
+  generatedAt: string;
+  mission: Pick<Mission, 'id' | 'name' | 'sector'>;
+  contracts: MissionContract[];
+  localEvents: ProofEvent[];
 }
