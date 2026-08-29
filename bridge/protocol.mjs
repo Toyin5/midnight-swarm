@@ -40,10 +40,7 @@ export async function handleBridgeRequest(
 ) {
   if (method === 'GET' && url === '/health') {
     const health = getHealth();
-    return {
-      status: health.status === 'ready' || health.status === 'completing' ? 200 : 503,
-      payload: health,
-    };
+    return { status: health.status === 'ready' ? 200 : 503, payload: health };
   }
   if (method !== 'POST' || url !== '/checkpoint') {
     return { status: 404, payload: { error: 'NOT_FOUND' } };

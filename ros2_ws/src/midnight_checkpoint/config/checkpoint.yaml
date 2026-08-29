@@ -19,7 +19,7 @@ midnight_bridge_forwarder:
 
 synthetic_pose_publisher:
   ros__parameters:
-    publish_hz: 5.0
+    publish_hz: 15.0
     start_x: 0.0
     start_y: 0.0
     start_z: 0.0
@@ -36,4 +36,5 @@ trajectory_visualizer:
     target_y: 81.0
     target_z: 20.0
     output_directory: /demo-output
-    animation_fps: 5
+    animation_fps: 15
+    snapshot_stride: 3
