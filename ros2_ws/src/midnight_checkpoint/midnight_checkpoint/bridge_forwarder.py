@@ -19,6 +19,7 @@ class BridgeForwarder(Node):
         self.declare_parameter("bridge_url", "http://midnight-bridge:3001/checkpoint")
         self.declare_parameter("timeout_seconds", 180.0)
         self.declare_parameter("max_attempts", 3)
+        self.declare_parameter("drone_id", "MS-01")
         self._submitted = False
         self._result_publisher = self.create_publisher(
             String, self.get_parameter("result_topic").value, 1
@@ -38,7 +39,10 @@ class BridgeForwarder(Node):
         request = Request(
             self.get_parameter("bridge_url").value,
             data=json.dumps(
-                {"droneId": "MS-01", "evidence": list(message.data)}
+                {
+                    "droneId": self.get_parameter("drone_id").value,
+                    "evidence": list(message.data),
+                }
             ).encode(),
             headers={"content-type": "application/json"},
             method="POST",

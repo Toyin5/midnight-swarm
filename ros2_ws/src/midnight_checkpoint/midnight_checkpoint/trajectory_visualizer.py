@@ -32,11 +32,16 @@ class TrajectoryVisualizer(Node):
         self.declare_parameter("output_directory", "/demo-output")
         self.declare_parameter("animation_fps", 5)
         self.declare_parameter("snapshot_stride", 3)
+        self.declare_parameter("drone_label", "MS-01")
+        self.declare_parameter("drone_color", "red")
+        self.declare_parameter("output_stem", "midnight-checkpoint")
 
         self._target = tuple(
-            float(self.get_parameter(name).value)
-            for name in ("target_x", "target_y", "target_z")
+            float(self.get_parameter(name).value) for name in ("target_x", "target_y", "target_z")
         )
+        self._label = str(self.get_parameter("drone_label").value)
+        self._color = str(self.get_parameter("drone_color").value)
+        self._output_stem = str(self.get_parameter("output_stem").value)
         self._positions: list[tuple[float, float, float]] = []
         self._rendered = False
         self._live_figure = None
@@ -55,11 +60,11 @@ class TrajectoryVisualizer(Node):
         if _live_plot:
             plt.ion()
             self._live_figure, self._live_axes = self._axes(
-                "Live private drone position (operator only)", interactive=True
+                f"{self._label} private position (on-drone demo only)", interactive=True
             )
-            (self._live_trail,) = self._live_axes.plot([], [], [], color="red", alpha=0.35)
+            (self._live_trail,) = self._live_axes.plot([], [], [], color=self._color, alpha=0.35)
             self._live_current = self._live_axes.scatter(
-                [], [], [], color="red", s=70, label="Current position"
+                [], [], [], color=self._color, s=70, label=self._label
             )
             self._live_axes.legend()
             self._live_figure.show()
@@ -71,7 +76,10 @@ class TrajectoryVisualizer(Node):
         self._update_live_window()
         stride = int(self.get_parameter("snapshot_stride").value)
         if len(self._positions) == 1 or len(self._positions) % max(1, stride) == 0:
-            self._render_frame(self._output / "trajectory-current.png", len(self._positions) - 1)
+            self._render_frame(
+                self._output / f"{self._output_stem}-current.png",
+                len(self._positions) - 1,
+            )
 
     def _on_result(self, message: String) -> None:
         try:
@@ -102,18 +110,14 @@ class TrajectoryVisualizer(Node):
         figure, axes = self._axes("Drone checkpoint trajectory")
         points = self._positions[: index + 1]
         xs, ys, zs = zip(*points, strict=True)
-        axes.plot(xs, ys, zs, color="red", alpha=0.35)
-        axes.scatter(xs[-1], ys[-1], zs[-1], color="red", s=70, label="Current position")
+        axes.plot(xs, ys, zs, color=self._color, alpha=0.35)
+        axes.scatter(xs[-1], ys[-1], zs[-1], color=self._color, s=70, label=self._label)
         axes.legend()
         figure.tight_layout()
         figure.savefig(path)
 
     def _update_live_window(self) -> None:
-        if (
-            self._live_figure is None
-            or self._live_trail is None
-            or self._live_current is None
-        ):
+        if self._live_figure is None or self._live_trail is None or self._live_current is None:
             return
         xs, ys, zs = zip(*self._positions, strict=True)
         self._live_trail.set_data_3d(xs, ys, zs)
@@ -123,9 +127,9 @@ class TrajectoryVisualizer(Node):
 
     def _render_animation(self) -> None:
         positions = tuple(self._positions)
-        figure, axes = self._axes("Midnight verified drone checkpoint")
-        trail, = axes.plot([], [], [], color="red", alpha=0.35)
-        current = axes.scatter([], [], [], color="red", s=70, label="Current position")
+        figure, axes = self._axes(f"Midnight verified {self._label} checkpoint")
+        (trail,) = axes.plot([], [], [], color=self._color, alpha=0.35)
+        current = axes.scatter([], [], [], color=self._color, s=70, label=self._label)
         axes.legend()
 
         def update(index: int):
@@ -135,7 +139,7 @@ class TrajectoryVisualizer(Node):
             return trail, current
 
         animation = FuncAnimation(figure, update, frames=len(positions), interval=200, blit=False)
-        path = self._output / "midnight-checkpoint.gif"
+        path = self._output / f"{self._output_stem}.gif"
         fps = int(self.get_parameter("animation_fps").value)
         animation.save(path, writer=PillowWriter(fps=fps))
         plt.close(figure)

@@ -8,7 +8,7 @@ import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-pri
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { CompiledContract } from '@midnight-ntwrk/midnight-js-protocol/compact-js';
 import { WebSocket } from 'ws';
-import { Contract, pureCircuits } from './managed/checkpoint/contract/index.js';
+import { Contract, ledger, pureCircuits } from './managed/checkpoint/contract/index.js';
 import { BridgeError, createBridgeServer } from './protocol.mjs';
 import { createLocalWallet, withDustRetry } from './wallet.mjs';
 
@@ -24,10 +24,10 @@ const config = {
   proofServer: process.env.MN_PROOF_SERVER_URL ?? 'http://proof-server:6300',
 };
 
-const droneDefinitions = [{ droneId: 'MS-01', bounds: [40n, 60n, 70n, 90n] }].map((definition) => ({
-  ...definition,
-  secret: secretFor(definition.droneId),
-}));
+const droneDefinitions = [
+  { droneId: 'MS-01', bounds: [40n, 60n, 70n, 90n] },
+  { droneId: 'MS-02', bounds: [20n, 40n, 25n, 45n] },
+].map((definition) => ({ ...definition, secret: secretFor(definition.droneId) }));
 
 let readiness = { status: 'initializing', mode: 'local-chain' };
 let providers;
@@ -35,7 +35,7 @@ let walletContext;
 let deployments = new Map();
 let manifest;
 let submitInProgress = false;
-let ms01Result;
+const results = new Map();
 let initializationPhase = 'WALLET';
 
 function secretFor(droneId) {
@@ -130,7 +130,7 @@ async function initialize() {
 }
 
 async function submitCheckpoint({ droneId, evidence: [x, y] }) {
-  if (ms01Result) return ms01Result;
+  if (results.has(droneId)) return results.get(droneId);
   if (readiness.status !== 'ready') {
     throw new BridgeError('NOT_READY', 503);
   }
@@ -149,7 +149,7 @@ async function submitCheckpoint({ droneId, evidence: [x, y] }) {
       maxY,
       definition.secret,
     );
-    ms01Result = {
+    const result = {
       status: 'verified',
       source: 'on-chain',
       droneId,
@@ -157,7 +157,8 @@ async function submitCheckpoint({ droneId, evidence: [x, y] }) {
       txId: call.public.txId,
       blockHeight: call.public.blockHeight.toString(),
     };
-    return ms01Result;
+    results.set(droneId, result);
+    return result;
   } catch {
     throw new BridgeError('INVALID_CLAIM', 422);
   } finally {
@@ -165,7 +166,27 @@ async function submitCheckpoint({ droneId, evidence: [x, y] }) {
   }
 }
 
-const server = createBridgeServer({ getHealth: () => readiness, submitCheckpoint });
+async function getCheckpointStatus(droneId) {
+  if (readiness.status !== 'ready') throw new BridgeError('NOT_READY', 503);
+  const deployment = deployments.get(droneId);
+  if (!deployment) throw new BridgeError('NOT_FOUND', 404);
+  const state = await providers.publicDataProvider.queryContractState(
+    deployment.deployed.deployTxData.public.contractAddress,
+  );
+  const verified = state ? ledger(state.data).checkpointReached : false;
+  return {
+    droneId,
+    status: verified ? 'verified' : 'pending',
+    source: 'on-chain',
+    contractAddress: deployment.deployed.deployTxData.public.contractAddress,
+  };
+}
+
+const server = createBridgeServer({
+  getHealth: () => readiness,
+  getCheckpointStatus,
+  submitCheckpoint,
+});
 server.listen(port, '0.0.0.0', () => {
   process.stdout.write(`Midnight bridge listening on port ${port}.\n`);
   void initialize().catch(() => {

@@ -3,14 +3,36 @@ import { BridgeError, handleBridgeRequest, parseCheckpointRequest } from './prot
 import { withDustRetry } from './wallet.mjs';
 
 describe('bridge public protocol', () => {
-  it('accepts only the MS-01 point without publishing private fields', () => {
+  it('accepts only supported drone points without publishing private fields', () => {
     expect(parseCheckpointRequest('{"droneId":"MS-01","evidence":[52,81]}')).toEqual({
       droneId: 'MS-01',
       evidence: [52n, 81n],
     });
+    expect(parseCheckpointRequest('{"droneId":"MS-02","evidence":[30,35]}')).toEqual({
+      droneId: 'MS-02',
+      evidence: [30n, 35n],
+    });
     expect(() =>
       parseCheckpointRequest('{"droneId":"MS-01","evidence":[52,81,40,60,70,90]}'),
     ).toThrow('INVALID_CLAIM');
+  });
+
+  it('exposes sanitized indexer-backed checkpoint status', async () => {
+    const dependencies = {
+      getHealth: () => ({ status: 'ready' }),
+      getCheckpointStatus: (droneId) => ({
+        droneId,
+        status: 'verified',
+        source: 'on-chain',
+      }),
+      submitCheckpoint: () => undefined,
+    };
+    expect(
+      await handleBridgeRequest({ method: 'GET', url: '/checkpoint-status/MS-01' }, dependencies),
+    ).toEqual({
+      status: 200,
+      payload: { droneId: 'MS-01', status: 'verified', source: 'on-chain' },
+    });
   });
 
   it('sanitizes readiness, busy, and unexpected failures', async () => {

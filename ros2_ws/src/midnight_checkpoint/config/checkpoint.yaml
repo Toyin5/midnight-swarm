@@ -9,32 +9,8 @@
     min_y: 70
     max_y: 90
 
-midnight_bridge_forwarder:
+mission_coordinator:
   ros__parameters:
-    evidence_topic: /midnight/private_checkpoint_evidence
-    result_topic: /midnight/checkpoint_result
-    bridge_url: http://midnight-bridge:3001/checkpoint
-    timeout_seconds: 180.0
-    max_attempts: 3
-
-synthetic_pose_publisher:
-  ros__parameters:
-    publish_hz: 15.0
-    start_x: 0.0
-    start_y: 0.0
-    start_z: 0.0
-    target_x: 52.0
-    target_y: 81.0
-    target_z: 20.0
-    travel_seconds: 8.0
-
-trajectory_visualizer:
-  ros__parameters:
-    pose_topic: /drone/private_pose
-    result_topic: /midnight/checkpoint_result
-    target_x: 52.0
-    target_y: 81.0
-    target_z: 20.0
-    output_directory: /demo-output
-    animation_fps: 15
-    snapshot_stride: 3
+    status_url: http://midnight-bridge:3001/checkpoint-status/MS-01
+    start_topic: /drone/ms02/start
+    poll_seconds: 1.0

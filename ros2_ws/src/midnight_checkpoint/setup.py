@@ -24,6 +24,7 @@ setup(
         "console_scripts": [
             "bridge_forwarder = midnight_checkpoint.bridge_forwarder:main",
             "checkpoint_monitor = midnight_checkpoint.checkpoint_monitor:main",
+            "mission_coordinator = midnight_checkpoint.mission_coordinator:main",
             "synthetic_pose = midnight_checkpoint.synthetic_pose:main",
             "trajectory_visualizer = midnight_checkpoint.trajectory_visualizer:main",
         ],

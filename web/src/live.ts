@@ -1,8 +1,12 @@
 import type { MissionManifest, ProofEvent, SimulationState } from './types';
 import { resetSimulation } from './simulator';
 
-const DRONE_IDS = new Set(['MS-01', 'MS-07', 'MS-12']);
+const DRONE_IDS = new Set(['MS-01', 'MS-02']);
 const ADDRESS_PATTERN = /^[0-9a-f]{64}$/i;
+const VERIFIED_SECTOR_POSITIONS = {
+  'MS-01': { leftPercent: 72, topPercent: 70 },
+  'MS-02': { leftPercent: 27, topPercent: 30 },
+} as const;
 
 export function parseMissionManifest(value: unknown): MissionManifest {
   if (!value || typeof value !== 'object') throw new Error('Manifest is missing');
@@ -15,7 +19,7 @@ export function parseMissionManifest(value: unknown): MissionManifest {
     typeof manifest.mission.name !== 'string' ||
     typeof manifest.mission.sector !== 'string' ||
     !Array.isArray(manifest.contracts) ||
-    manifest.contracts.length !== 1 ||
+    manifest.contracts.length !== 2 ||
     !Array.isArray(manifest.localEvents)
   ) {
     throw new Error('Manifest has an unsupported shape');
@@ -33,7 +37,9 @@ export function parseMissionManifest(value: unknown): MissionManifest {
     }
     ids.add(contract.droneId);
   }
-  if (!ids.has('MS-01')) throw new Error('Manifest is missing the ROS drone contract');
+  if (!ids.has('MS-01') || !ids.has('MS-02')) {
+    throw new Error('Manifest is missing a sequential ROS drone contract');
+  }
 
   for (const item of manifest.localEvents) {
     if (
@@ -63,9 +69,20 @@ export function liveInitialState(manifest: MissionManifest): SimulationState {
         ...manifest.mission,
         status: 'active',
         completedCheckpoints: 0,
-        totalCheckpoints: 1,
+        totalCheckpoints: 2,
       },
-      drones: state.drones.filter((drone) => drone.id === 'MS-01'),
+      drones: [
+        state.drones.find((drone) => drone.id === 'MS-01')!,
+        {
+          id: 'MS-02',
+          label: 'Azure',
+          assignment: 'Checkpoint Delta · waits for MS-01 ledger finality',
+          status: 'ready',
+          proofStatus: 'idle',
+          battery: 91,
+          sectorPosition: { leftPercent: 24, topPercent: 70 },
+        },
+      ],
     },
     manifest.localEvents,
   );
@@ -115,9 +132,22 @@ export function applyVerifiedContract(
       completedCheckpoints,
       status: completedCheckpoints === state.mission.totalCheckpoints ? 'complete' : 'active',
     },
-    drones: state.drones.map((drone) =>
-      drone.id === droneId ? { ...drone, status: 'complete', proofStatus: 'verified' } : drone,
-    ),
+    drones: state.drones.map((drone) => {
+      if (drone.id === droneId) {
+        return {
+          ...drone,
+          status: 'complete',
+          proofStatus: 'verified',
+          sectorPosition:
+            VERIFIED_SECTOR_POSITIONS[droneId as keyof typeof VERIFIED_SECTOR_POSITIONS] ??
+            drone.sectorPosition,
+        };
+      }
+      if (droneId === 'MS-01' && drone.id === 'MS-02' && drone.proofStatus !== 'verified') {
+        return { ...drone, status: 'in-flight', proofStatus: 'generating' };
+      }
+      return drone;
+    }),
     events: [event, ...state.events],
   };
 }
