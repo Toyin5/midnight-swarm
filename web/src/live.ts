@@ -15,7 +15,7 @@ export function parseMissionManifest(value: unknown): MissionManifest {
     typeof manifest.mission.name !== 'string' ||
     typeof manifest.mission.sector !== 'string' ||
     !Array.isArray(manifest.contracts) ||
-    manifest.contracts.length !== 3 ||
+    manifest.contracts.length !== 1 ||
     !Array.isArray(manifest.localEvents)
   ) {
     throw new Error('Manifest has an unsupported shape');
@@ -33,6 +33,7 @@ export function parseMissionManifest(value: unknown): MissionManifest {
     }
     ids.add(contract.droneId);
   }
+  if (!ids.has('MS-01')) throw new Error('Manifest is missing the ROS drone contract');
 
   for (const item of manifest.localEvents) {
     if (
@@ -57,7 +58,14 @@ export function liveInitialState(manifest: MissionManifest): SimulationState {
   return applyLocalEvents(
     {
       ...state,
-      mission: { ...state.mission, ...manifest.mission, status: 'active' },
+      mission: {
+        ...state.mission,
+        ...manifest.mission,
+        status: 'active',
+        completedCheckpoints: 0,
+        totalCheckpoints: 1,
+      },
+      drones: state.drones.filter((drone) => drone.id === 'MS-01'),
     },
     manifest.localEvents,
   );

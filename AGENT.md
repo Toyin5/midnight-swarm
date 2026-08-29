@@ -12,8 +12,9 @@ Do not build flight control, real drone networking, computer vision, or producti
 
 1. ROS generates private evidence for `MS-01` and sends only `[x, y]` to the internal bridge.
 2. The bridge owns checkpoint bounds, credentials, wallet state, deployments, and proof submission.
-3. Three Compact contracts produce the deterministic success, rejection, success storyline.
-4. The browser reads only the public manifest and public indexer state.
+3. One Compact contract verifies the ROS-triggered `MS-01` checkpoint claim.
+4. The browser reads only the public manifest and public indexer state, changing to verified
+   only after finalized ledger state is observed.
 
 ## Privacy Invariants
 
@@ -27,10 +28,9 @@ Do not build flight control, real drone networking, computer vision, or producti
 
 Implement the thinnest end-to-end vertical slice:
 
-- one mission;
-- a small simulated swarm;
+- one live mission and one ROS-driven drone;
 - one proof-backed event (`checkpoint reached` is the default);
-- success and failure proof paths;
+- a live success path plus valid/invalid contract test coverage;
 - an operator dashboard showing drone state, assignment, event history, proof status, and overall progress.
 
 Add more event types only after that path works reliably.
@@ -52,7 +52,10 @@ Prefer existing repository patterns and installed dependencies. Avoid adding ser
 - The dashboard clearly distinguishes pending, verified, and failed events.
 - A teammate can run the demo from the README.
 - Tests cover the contract's valid and invalid claim paths.
-- The live path ends at `true, false, true` ledger state and 67% dashboard completion.
+- Local mode starts at zero, contains only `MS-01`, and reaches 100% only after its finalized
+  on-chain checkpoint state is observed.
+- The optional Matplotlib operator window opens once and updates the private trajectory in
+  place; private position data remains outside the browser.
 
 ## Working Rules
 

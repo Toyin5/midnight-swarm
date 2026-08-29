@@ -16,10 +16,9 @@ flowchart LR
     I -->|"public contract state"| W
 ```
 
-The bridge deploys one checkpoint contract for each of `MS-01`, `MS-07`, and `MS-12`.
-ROS triggers the first proof. After it verifies, the bridge deterministically submits an
-invalid second claim and a valid third claim. The expected ledger state is
-`true, false, true`.
+The bridge deploys one checkpoint contract for `MS-01`. ROS triggers its only proof, and
+the dashboard remains at zero progress until the indexer observes finalized public contract
+state with `checkpointReached == true`.
 
 ## Components
 
@@ -63,7 +62,7 @@ Public:
 - pseudonymous mission and drone IDs;
 - contract addresses and commitments;
 - `checkpointReached` and `verifiedProofCount`;
-- transaction identifiers, block heights, and sanitized local rejection events.
+- transaction identifiers and block heights.
 
 The manifest volume exposes only `web/public/mission-manifest.json`. Private state stores,
 ROS evidence, and bridge secrets are neither mounted into `web/` nor logged. Internal ROS
@@ -71,9 +70,12 @@ and HTTP transport is trusted local-demo infrastructure and is not production-se
 
 ## Dashboard Contract
 
-The dashboard loads the public manifest and subscribes to all three addresses through the
-indexer. Verified states are labeled `ON-CHAIN`; `MS-07` is labeled `LOCAL` because its
-rejected proof does not mutate ledger state. Missing services leave Mock mode usable.
+The dashboard loads the public manifest and subscribes to the MS-01 address through the
+indexer. The verified state is labeled `ON-CHAIN`. It does not consume or display ROS pose
+messages; a private operator may enable the local Matplotlib window with
+`MIDNIGHT_SWARM_LIVE_PLOT=1`. That window is a single persistent 3D figure updated at
+15 Hz; off-screen PNG snapshots remain throttled to 5 Hz. Missing services leave Mock mode
+usable.
 
 ## Version Constraint
 

@@ -1,14 +1,20 @@
 import json
+import os
 from pathlib import Path
 
+# Backend selection must happen before pyplot and the ROS imports.
+# ruff: noqa: E402
 import matplotlib
 
-matplotlib.use("Agg")
+_live_plot = os.environ.get("MIDNIGHT_SWARM_LIVE_PLOT") == "1"
+matplotlib.use("TkAgg" if _live_plot else "Agg")
 
 import matplotlib.pyplot as plt
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -25,6 +31,7 @@ class TrajectoryVisualizer(Node):
         self.declare_parameter("target_z", 20.0)
         self.declare_parameter("output_directory", "/demo-output")
         self.declare_parameter("animation_fps", 5)
+        self.declare_parameter("snapshot_stride", 3)
 
         self._target = tuple(
             float(self.get_parameter(name).value)
@@ -32,6 +39,10 @@ class TrajectoryVisualizer(Node):
         )
         self._positions: list[tuple[float, float, float]] = []
         self._rendered = False
+        self._live_figure = None
+        self._live_axes = None
+        self._live_trail = None
+        self._live_current = None
         self._output = Path(self.get_parameter("output_directory").value)
         self._output.mkdir(parents=True, exist_ok=True)
         self.create_subscription(
@@ -41,11 +52,26 @@ class TrajectoryVisualizer(Node):
             String, self.get_parameter("result_topic").value, self._on_result, 1
         )
         self.get_logger().info("3D trajectory recorder ready")
+        if _live_plot:
+            plt.ion()
+            self._live_figure, self._live_axes = self._axes(
+                "Live private drone position (operator only)", interactive=True
+            )
+            (self._live_trail,) = self._live_axes.plot([], [], [], color="red", alpha=0.35)
+            self._live_current = self._live_axes.scatter(
+                [], [], [], color="red", s=70, label="Current position"
+            )
+            self._live_axes.legend()
+            self._live_figure.show()
+            self.get_logger().info("Live operator Matplotlib window enabled")
 
     def _on_pose(self, message: PoseStamped) -> None:
         point = message.pose.position
         self._positions.append((point.x, point.y, point.z))
-        self._render_frame(self._output / "trajectory-current.png", len(self._positions) - 1)
+        self._update_live_window()
+        stride = int(self.get_parameter("snapshot_stride").value)
+        if len(self._positions) == 1 or len(self._positions) % max(1, stride) == 0:
+            self._render_frame(self._output / "trajectory-current.png", len(self._positions) - 1)
 
     def _on_result(self, message: String) -> None:
         try:
@@ -56,8 +82,10 @@ class TrajectoryVisualizer(Node):
             self._rendered = True
             self._render_animation()
 
-    def _axes(self, title: str):
-        figure = plt.figure(figsize=(8, 6))
+    def _axes(self, title: str, *, interactive: bool = False):
+        figure = plt.figure(figsize=(8, 6)) if interactive else Figure(figsize=(8, 6))
+        if not interactive:
+            FigureCanvasAgg(figure)
         axes = figure.add_subplot(111, projection="3d")
         axes.set_title(title)
         axes.set_xlabel("X")
@@ -79,7 +107,19 @@ class TrajectoryVisualizer(Node):
         axes.legend()
         figure.tight_layout()
         figure.savefig(path)
-        plt.close(figure)
+
+    def _update_live_window(self) -> None:
+        if (
+            self._live_figure is None
+            or self._live_trail is None
+            or self._live_current is None
+        ):
+            return
+        xs, ys, zs = zip(*self._positions, strict=True)
+        self._live_trail.set_data_3d(xs, ys, zs)
+        self._live_current._offsets3d = ([xs[-1]], [ys[-1]], [zs[-1]])
+        self._live_figure.canvas.draw_idle()
+        self._live_figure.canvas.flush_events()
 
     def _render_animation(self) -> None:
         positions = tuple(self._positions)
@@ -108,5 +148,6 @@ def main(args=None) -> None:
     try:
         rclpy.spin(node)
     finally:
+        plt.close("all")
         node.destroy_node()
         rclpy.shutdown()

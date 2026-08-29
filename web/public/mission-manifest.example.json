@@ -10,25 +10,7 @@
     {
       "droneId": "MS-01",
       "address": "0000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
-      "droneId": "MS-07",
-      "address": "0000000000000000000000000000000000000000000000000000000000000002"
-    },
-    {
-      "droneId": "MS-12",
-      "address": "0000000000000000000000000000000000000000000000000000000000000003"
     }
   ],
-  "localEvents": [
-    {
-      "id": "local-MS-07",
-      "droneId": "MS-07",
-      "title": "Checkpoint proof rejected",
-      "detail": "The private claim was rejected before ledger submission.",
-      "status": "failed",
-      "timestamp": "LOCAL",
-      "source": "local"
-    }
-  ]
+  "localEvents": []
 }
