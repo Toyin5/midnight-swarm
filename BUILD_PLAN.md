@@ -10,18 +10,20 @@
 - [x] Pass build, test, lint, formatting, and Docker configuration checks.
 - [x] Integrate the synthetic ROS checkpoint flow with the live dashboard.
 
-## Next Milestone: Live Local Demo
+## Live Local Demo
 
 - [x] Use `bridge/` as the single wallet, deployment, and proof-submission workspace.
-- [x] Deploy three instances of the existing one-checkpoint contract.
+- [x] Deploy one checkpoint contract for the ROS-driven `MS-01` mission.
 - [x] Generate a gitignored public mission manifest containing only mission metadata and contract addresses.
-- [x] Submit ROS success, local rejection, and local success through the bridge.
+- [x] Submit the ROS checkpoint claim through the bridge and wait for finalization.
 - [x] Add a visible Mock/Local mode switch to the dashboard.
-- [x] Subscribe to all three contracts through the Midnight indexer.
-- [x] Label verified ledger results `ON-CHAIN` and rejected attempts `LOCAL`.
+- [x] Subscribe to the `MS-01` contract through the Midnight indexer.
+- [x] Label the finalized ledger result `ON-CHAIN`.
 - [x] Add unconfigured, connecting, connected, partial, offline, retry, and stale-status states.
 - [x] Add copy controls and links for contract addresses.
 - [x] Verify that coordinates, bounds, secrets, and raw proof errors never reach web state, public manifests, logs, or ledger data.
+- [x] Keep Local mode idle until ROS is explicitly started from a second terminal.
+- [x] Add a persistent 15 FPS operator-local Matplotlib view without exposing poses to the dashboard.
 
 ## Later Milestones
 
@@ -55,9 +57,10 @@
 
 ## Live Demo Acceptance Checklist
 
-- [x] One command prepares and runs the local live demo.
-- [x] Two proofs verify on-chain.
-- [x] One proof rejects without changing ledger state.
+- [x] One command prepares the local chain, bridge, and dashboard.
+- [x] A separate command explicitly starts the ROS flight.
+- [x] The ROS-triggered proof verifies on-chain.
+- [x] Contract tests cover both valid and rejected claims.
 - [x] The dashboard updates without receiving private evidence.
 - [x] Mock mode remains usable when Midnight services are unavailable.
 - [x] Build, tests, lint, Docker validation, and responsive visual QA pass.

@@ -8,7 +8,7 @@ import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-pri
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { CompiledContract } from '@midnight-ntwrk/midnight-js-protocol/compact-js';
 import { WebSocket } from 'ws';
-import { Contract, ledger, pureCircuits } from './managed/checkpoint/contract/index.js';
+import { Contract, pureCircuits } from './managed/checkpoint/contract/index.js';
 import { BridgeError, createBridgeServer } from './protocol.mjs';
 import { createLocalWallet, withDustRetry } from './wallet.mjs';
 
@@ -24,11 +24,10 @@ const config = {
   proofServer: process.env.MN_PROOF_SERVER_URL ?? 'http://proof-server:6300',
 };
 
-const droneDefinitions = [
-  { droneId: 'MS-01', bounds: [40n, 60n, 70n, 90n] },
-  { droneId: 'MS-07', bounds: [18n, 38n, 22n, 42n], point: [74n, 30n] },
-  { droneId: 'MS-12', bounds: [18n, 38n, 22n, 42n], point: [27n, 33n] },
-].map((definition) => ({ ...definition, secret: secretFor(definition.droneId) }));
+const droneDefinitions = [{ droneId: 'MS-01', bounds: [40n, 60n, 70n, 90n] }].map((definition) => ({
+  ...definition,
+  secret: secretFor(definition.droneId),
+}));
 
 let readiness = { status: 'initializing', mode: 'local-chain' };
 let providers;
@@ -92,7 +91,7 @@ async function initialize() {
     CompiledContract.withCompiledFileAssets(managedPath),
   );
 
-  process.stdout.write('Deploying three checkpoint contracts…\n');
+  process.stdout.write('Deploying the ROS checkpoint contract…\n');
   for (const definition of droneDefinitions) {
     initializationPhase = `DEPLOY_${definition.droneId.replace('-', '_')}`;
     const [minX, maxX, minY, maxY] = definition.bounds;
@@ -132,7 +131,7 @@ async function initialize() {
 
 async function submitCheckpoint({ droneId, evidence: [x, y] }) {
   if (ms01Result) return ms01Result;
-  if (readiness.status !== 'ready' && readiness.status !== 'completing') {
+  if (readiness.status !== 'ready') {
     throw new BridgeError('NOT_READY', 503);
   }
   if (submitInProgress) throw new BridgeError('BUSY', 409);
@@ -158,75 +157,9 @@ async function submitCheckpoint({ droneId, evidence: [x, y] }) {
       txId: call.public.txId,
       blockHeight: call.public.blockHeight.toString(),
     };
-    readiness = { ...readiness, status: 'completing' };
-    setImmediate(() => void completeRemainingMission());
     return ms01Result;
   } catch {
     throw new BridgeError('INVALID_CLAIM', 422);
-  } finally {
-    submitInProgress = false;
-  }
-}
-
-async function completeRemainingMission() {
-  if (submitInProgress) return;
-  submitInProgress = true;
-  try {
-    const rejected = deployments.get('MS-07');
-    const [failedX, failedY] = rejected.definition.point;
-    const [minX, maxX, minY, maxY] = rejected.definition.bounds;
-    let rejectedLocally = false;
-    try {
-      await rejected.deployed.callTx.proveCheckpoint(
-        failedX,
-        failedY,
-        minX,
-        maxX,
-        minY,
-        maxY,
-        rejected.definition.secret,
-      );
-    } catch {
-      rejectedLocally = true;
-    }
-    if (!rejectedLocally) throw new Error('REJECTION_UNEXPECTEDLY_VERIFIED');
-    manifest.localEvents.push({
-      id: 'local-MS-07',
-      droneId: 'MS-07',
-      title: 'Checkpoint proof rejected',
-      detail: 'The private claim was rejected before ledger submission.',
-      status: 'failed',
-      timestamp: 'LOCAL',
-      source: 'local',
-    });
-    await writeManifest();
-
-    const verified = deployments.get('MS-12');
-    const [validX, validY] = verified.definition.point;
-    const [validMinX, validMaxX, validMinY, validMaxY] = verified.definition.bounds;
-    await verified.deployed.callTx.proveCheckpoint(
-      validX,
-      validY,
-      validMinX,
-      validMaxX,
-      validMinY,
-      validMaxY,
-      verified.definition.secret,
-    );
-
-    const outcomes = await Promise.all(
-      [...deployments.values()].map(async ({ deployed }) => {
-        const state = await providers.publicDataProvider.queryContractState(
-          deployed.deployTxData.public.contractAddress,
-        );
-        return state ? ledger(state.data).checkpointReached : false;
-      }),
-    );
-    if (outcomes.join(',') !== 'true,false,true') throw new Error('LEDGER_OUTCOME_MISMATCH');
-    readiness = { ...readiness, status: 'ready' };
-    process.stdout.write('Unified ROS mission completed with two verified checkpoints.\n');
-  } catch {
-    readiness = { status: 'failed', mode: 'local-chain', error: 'MISSION_COMPLETION_FAILED' };
   } finally {
     submitInProgress = false;
   }

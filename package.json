@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "contract:compile": "npm run compact --workspace contract",
-    "live": "docker compose up -d --build --wait midnight-bridge ros-simulator && npm run dev",
+    "live": "docker compose up -d --build --force-recreate --wait midnight-bridge && npm run dev",
+    "ros:start": "docker compose up -d --build --force-recreate ros-simulator",
     "midnight:up": "docker compose up -d --wait node indexer proof-server",
     "midnight:down": "docker compose down"
   },

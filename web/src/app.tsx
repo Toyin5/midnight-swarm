@@ -211,8 +211,8 @@ export function App() {
             <Metric
               icon={Radio}
               label="Swarm online"
-              value="3 / 3"
-              note="Encrypted telemetry links"
+              value={`${state.drones.length} / ${state.drones.length}`}
+              note={mode === 'local' ? 'ROS checkpoint unit' : 'Encrypted telemetry links'}
             />
             <Metric
               icon={ShieldCheck}
@@ -296,7 +296,9 @@ export function App() {
               <Card className="overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/7 px-4 py-3.5">
                   <h3 className="text-sm font-semibold text-white">Swarm units</h3>
-                  <span className="font-mono text-[10px] text-slate-500">3 ACTIVE LINKS</span>
+                  <span className="font-mono text-[10px] text-slate-500">
+                    {state.drones.length} ACTIVE {state.drones.length === 1 ? 'LINK' : 'LINKS'}
+                  </span>
                 </div>
                 {state.drones.map((drone) => (
                   <DroneRow

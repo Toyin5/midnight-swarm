@@ -41,8 +41,13 @@ services:
     restart: unless-stopped
     environment:
       ROS_DOMAIN_ID: '42'
+      DISPLAY: '${DISPLAY:-}'
+      XAUTHORITY: '/tmp/.docker.xauth'
+      MIDNIGHT_SWARM_LIVE_PLOT: '${MIDNIGHT_SWARM_LIVE_PLOT:-0}'
     volumes:
       - ./demo-output:/demo-output
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - '${XAUTHORITY:-/dev/null}:/tmp/.docker.xauth:ro'
     depends_on:
       midnight-bridge:
         condition: service_healthy
