@@ -12,9 +12,10 @@ Do not build flight control, real drone networking, computer vision, or producti
 
 1. ROS generates private evidence for `MS-01` and sends only `[x, y]` to the internal bridge.
 2. The bridge owns checkpoint bounds, credentials, wallet state, deployments, and proof submission.
-3. One Compact contract verifies the ROS-triggered `MS-01` checkpoint claim.
-4. The browser reads only the public manifest and public indexer state, changing to verified
-   only after finalized ledger state is observed.
+3. One Compact deployment verifies `MS-01`; a ROS coordinator reads its finalized public
+   state through the indexer before publishing the `MS-02` start signal.
+4. A second Compact deployment verifies `MS-02` at a different checkpoint.
+5. The browser reads only the public manifest and public indexer state for both drones.
 
 ## Privacy Invariants
 
@@ -28,7 +29,7 @@ Do not build flight control, real drone networking, computer vision, or producti
 
 Implement the thinnest end-to-end vertical slice:
 
-- one live mission and one ROS-driven drone;
+- one live mission and two sequential ROS-driven drones;
 - one proof-backed event (`checkpoint reached` is the default);
 - a live success path plus valid/invalid contract test coverage;
 - an operator dashboard showing drone state, assignment, event history, proof status, and overall progress.
@@ -52,8 +53,10 @@ Prefer existing repository patterns and installed dependencies. Avoid adding ser
 - The dashboard clearly distinguishes pending, verified, and failed events.
 - A teammate can run the demo from the README.
 - Tests cover the contract's valid and invalid claim paths.
-- Local mode starts at zero, contains only `MS-01`, and reaches 100% only after its finalized
-  on-chain checkpoint state is observed.
+- Local mode starts at zero with `MS-02` waiting, reaches 50% after finalized `MS-01` state,
+  and reaches 100% only after `MS-02` also finalizes on-chain.
+- `MS-02` must start from the coordinator's indexer-backed state read, never from a timer,
+  raw pose observation, or unfinalized bridge response.
 - The optional Matplotlib operator window opens once and updates the private trajectory in
   place; private position data remains outside the browser.
 

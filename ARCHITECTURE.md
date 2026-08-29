@@ -11,14 +11,19 @@ flowchart LR
     B --> N["Midnight node"]
     N --> I["Indexer"]
     B -->|"public result"| F
-    F --> V["ROS visualization"]
+    F --> V["On-drone visualization"]
+    I -->|"finalized MS-01 state"| C["ROS mission coordinator"]
+    C -->|"start MS-02 once"| R2["ROS drone MS-02"]
+    R2 -->|"private pose and claim"| B
     B -->|"public manifest"| W["React dashboard"]
     I -->|"public contract state"| W
 ```
 
-The bridge deploys one checkpoint contract for `MS-01`. ROS triggers its only proof, and
-the dashboard remains at zero progress until the indexer observes finalized public contract
-state with `checkpointReached == true`.
+The bridge deploys independent checkpoint contracts for `MS-01` and `MS-02`. MS-01 begins
+immediately. The ROS mission coordinator polls a sanitized bridge endpoint backed by the
+Midnight indexer's public contract state. It publishes MS-02's durable start signal exactly
+once only after MS-01 has `checkpointReached == true`. MS-02 then flies to a different
+checkpoint and submits its own proof.
 
 ## Components
 
@@ -38,7 +43,7 @@ indexer, proof server, and Vite interfaces are exposed to host loopback.
 `GET /health` reports initialization status and public deployment addresses. It contains no
 private fields.
 
-`POST /checkpoint` accepts:
+`POST /checkpoint` accepts either configured drone:
 
 ```json
 { "droneId": "MS-01", "evidence": [52, 81] }
@@ -46,7 +51,11 @@ private fields.
 
 Success returns only status, source, drone ID, contract address, transaction ID, and block
 height. Errors use sanitized codes: `NOT_READY`, `BUSY`, `INVALID_CLAIM`, or
-`INTERNAL_ERROR`. A successful duplicate `MS-01` submission returns the cached public result.
+`INTERNAL_ERROR`. A successful duplicate submission returns that drone's cached public result.
+
+`GET /checkpoint-status/MS-01` queries the indexer-backed public contract state. The ROS
+coordinator accepts only `{ droneId: "MS-01", source: "on-chain", status: "verified" }` as
+authorization to start MS-02.
 
 ## Public and Private Data
 
@@ -70,8 +79,9 @@ and HTTP transport is trusted local-demo infrastructure and is not production-se
 
 ## Dashboard Contract
 
-The dashboard loads the public manifest and subscribes to the MS-01 address through the
-indexer. The verified state is labeled `ON-CHAIN`. It does not consume or display ROS pose
+The dashboard loads the public manifest and subscribes to both addresses through the
+indexer. Verified states are labeled `ON-CHAIN`. Finalized MS-01 state moves MS-02 from
+waiting to in-flight; finalized MS-02 state completes the mission. It does not consume ROS pose
 messages. A private operator may enable the Matplotlib window inside the simulated drone's
 ROS environment with `MIDNIGHT_SWARM_LIVE_PLOT=1`. The local-only window exists to make the
 private trajectory visible during the hackathon demo; it is never published over a network

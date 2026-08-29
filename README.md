@@ -5,9 +5,9 @@
 
 Midnight Swarm is a ROS 2 and Midnight proof-of-concept for autonomous systems that must
 prove they completed a task without publishing their location, route, sensor data, or
-credentials. In the live demo, a simulated drone reaches a private checkpoint, ROS detects
-the arrival, and a Compact contract verifies the claim. The operator dashboard changes to
-verified only after the transaction is finalized on the local Midnight ledger.
+credentials. In the live demo, two simulated drones complete different private checkpoints
+in sequence. Drone 2 starts only after a ROS mission coordinator reads finalized proof of
+drone 1's completion from the Midnight indexer.
 
 > The blockchain learns that the checkpoint rule was satisfied—not where the drone flew.
 
@@ -15,12 +15,13 @@ verified only after the transaction is finalized on the local Midnight ledger.
 
 The focused end-to-end path is complete:
 
-1. A ROS 2 node publishes a private `geometry_msgs/PoseStamped` trajectory.
-2. The checkpoint monitor requires three consecutive in-bounds samples.
-3. The ROS forwarder sends only the claim inputs over the internal Compose network.
-4. The bridge proves checkpoint inclusion and drone authorization with Compact.
-5. Midnight publishes the outcome and minimum transaction metadata.
-6. The indexer-backed dashboard changes MS-01 from idle to verified.
+1. MS-01 publishes a private `geometry_msgs/PoseStamped` trajectory.
+2. Its monitor requires three consecutive in-bounds samples and submits a Compact claim.
+3. Midnight finalizes MS-01's checkpoint proof.
+4. The ROS mission coordinator reads that finalized public state through the indexer.
+5. Only then does it publish the durable MS-02 start signal.
+6. Blue MS-02 flies to a different target and submits its own independent proof.
+7. The dashboard reaches 50% after MS-01 and 100% after MS-02 finalizes.
 
 The demo includes a persistent 15 FPS Matplotlib view only to show judges where the
 simulated drone actually is. It runs inside the simulated drone's ROS environment and reads
@@ -67,7 +68,7 @@ private sensors -> perception/navigation model -> ROS PoseStamped
 
 ```mermaid
 flowchart LR
-    A[Private robot or AI stack] -->|PoseStamped| R[ROS checkpoint monitor]
+    A[Private MS-01 stack] -->|PoseStamped| R[ROS checkpoint monitor]
     R -->|private x/y claim| F[ROS bridge forwarder]
     F -->|internal HTTP| B[Midnight JS bridge]
     B --> P[Proof server]
@@ -77,6 +78,10 @@ flowchart LR
     B -->|public result| V[ROS result topic]
     R --> M[On-drone Matplotlib demo view]
     V --> M
+    I -->|finalized MS-01 state| C[ROS mission coordinator]
+    C -->|durable start signal| A2[Private blue MS-02 stack]
+    A2 -->|different pose and target| R2[MS-02 checkpoint monitor]
+    R2 --> F
 ```
 
 | Layer             | Technology                           | Responsibility                                                  |
@@ -129,7 +134,7 @@ If `compact` is not installed, follow the official
 npm run live
 ```
 
-Open the Vite URL (normally `http://localhost:5173`) and select **Local**. MS-01 should
+Open the Vite URL (normally `http://localhost:5173`) and select **Local**. Both drones should
 remain idle at 0%; ROS no longer starts automatically.
 
 ### 2. Start the ROS flight
@@ -144,10 +149,11 @@ npm run ros:start
 env MIDNIGHT_SWARM_LIVE_PLOT=1 npm run ros:start
 ```
 
-The window opens once and updates a persistent 3D plot at 15 FPS. It is a local view into
-the simulated drone container, not a network stream or dashboard feed. After ROS observes
-three stable in-bounds samples and Midnight finalizes the proof, the website changes MS-01
-to `verified` and mission progress to 100%.
+Each on-drone window opens once and updates a persistent 3D plot at 15 FPS. MS-01 is red;
+MS-02 is blue and remains stationary until the coordinator reads finalized MS-01 state from
+the blockchain. These are local views into the simulated drone container, not network
+streams or dashboard feeds. The website reaches 50% after MS-01 finalizes and 100% after
+MS-02 finalizes.
 
 Watch the authoritative runtime messages:
 
@@ -161,14 +167,20 @@ Expected sequence:
 Midnight bridge ready for ROS evidence.
 Checkpoint evidence ready for the local Midnight bridge
 Compact bridge verified checkpoint evidence
+Finalized MS-01 state observed; MS-02 start published
+MS-02 synthetic private pose stream started
+Checkpoint evidence ready for the local Midnight bridge
+Compact bridge verified checkpoint evidence
 Midnight-verified 3D animation saved
 ```
 
 Generated artifacts:
 
 ```text
-demo-output/trajectory-current.png
-demo-output/midnight-checkpoint.gif
+demo-output/ms-01-checkpoint-current.png
+demo-output/ms-01-checkpoint.gif
+demo-output/ms-02-checkpoint-current.png
+demo-output/ms-02-checkpoint.gif
 ```
 
 These files are written through a local development volume solely for the hackathon demo.
@@ -202,11 +214,12 @@ It only needs to publish a standard pose and consume an optional public result.
 
 ### ROS interface
 
-| Direction       | Topic                                   | Message                     | Purpose                             |
-| --------------- | --------------------------------------- | --------------------------- | ----------------------------------- |
-| Input           | `/drone/private_pose`                   | `geometry_msgs/PoseStamped` | Private robot/localization position |
-| Internal output | `/midnight/private_checkpoint_evidence` | `std_msgs/UInt32MultiArray` | Local `[x, y]` proof input          |
-| Public result   | `/midnight/checkpoint_result`           | `std_msgs/String`           | Sanitized JSON verification result  |
+| Direction       | Topic                                        | Message                     | Purpose                             |
+| --------------- | -------------------------------------------- | --------------------------- | ----------------------------------- |
+| Input           | `/drone/{id}/private_pose`                   | `geometry_msgs/PoseStamped` | Private robot/localization position |
+| Internal output | `/midnight/{id}/private_checkpoint_evidence` | `std_msgs/UInt32MultiArray` | Local `[x, y]` proof input          |
+| Public result   | `/midnight/{id}/checkpoint_result`           | `std_msgs/String`           | Sanitized JSON verification result  |
+| Chain handoff   | `/drone/ms02/start`                          | `std_msgs/Bool`             | Durable start after MS-01 finality  |
 
 The monitor converts positions to non-negative fixed-point integers and emits exactly once
 after `required_samples` consecutive observations satisfy the configured bounds. It does
@@ -236,9 +249,11 @@ For a real robot, replace or omit the `synthetic_pose` launch action and retain:
 
 - `checkpoint_monitor` for stable private-arrival detection;
 - `bridge_forwarder` for proof submission and sanitized results;
+- `mission_coordinator` when a later robot must wait for finalized public state;
 - `trajectory_visualizer` only when a local private operator view is appropriate.
 
-The current bridge accepts pseudonymous drone ID `MS-01` and unsigned 32-bit X/Y values.
+The current bridge accepts pseudonymous drone IDs `MS-01` and `MS-02` with unsigned 32-bit
+X/Y values. Each has independent committed bounds, credentials, and contract state.
 Production adapters should add authenticated transport, replay protection, timestamps,
 calibrated coordinate conversion, and hardware-backed drone credentials.
 
@@ -308,6 +323,6 @@ compliance integrations for regulated operators.
 - The contract verifies X/Y only; Z is visualized but not part of the predicate.
 - ROS/HTTP transport is trusted local plaintext inside Docker Compose.
 - The bridge uses a development wallet and local `undeployed` network.
-- Local mode supports one drone and one checkpoint per fresh run.
+- Local mode supports two sequential drones and one checkpoint per drone per fresh run.
 - The browser is read-only and has no wallet integration.
 - This prototype proves mission progress; it does not control flight.

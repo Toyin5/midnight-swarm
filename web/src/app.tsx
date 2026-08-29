@@ -272,7 +272,9 @@ export function App() {
                         'relative grid h-8 w-8 place-items-center rounded-full border shadow-lg',
                         drone.proofStatus === 'failed'
                           ? 'border-rose-300/40 bg-rose-400/15 text-rose-200'
-                          : 'border-emerald-300/35 bg-[#0d2520] text-emerald-200',
+                          : drone.id === 'MS-02'
+                            ? 'border-sky-300/40 bg-sky-400/15 text-sky-200'
+                            : 'border-emerald-300/35 bg-[#0d2520] text-emerald-200',
                       )}
                     >
                       <Satellite className="h-3.5 w-3.5" />

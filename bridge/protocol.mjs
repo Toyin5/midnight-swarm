@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 
 const UINT32_MAX = 2 ** 32 - 1;
+const DRONE_IDS = new Set(['MS-01', 'MS-02']);
 
 export class BridgeError extends Error {
   constructor(code, status) {
@@ -19,7 +20,7 @@ export function parseCheckpointRequest(body) {
   }
   if (
     !value ||
-    value.droneId !== 'MS-01' ||
+    !DRONE_IDS.has(value.droneId) ||
     !Array.isArray(value.evidence) ||
     value.evidence.length !== 2 ||
     !value.evidence.every((item) => Number.isInteger(item) && item >= 0 && item <= UINT32_MAX)
@@ -36,11 +37,21 @@ function respond(response, status, payload) {
 
 export async function handleBridgeRequest(
   { method, url, body = '' },
-  { getHealth, submitCheckpoint },
+  { getHealth, getCheckpointStatus, submitCheckpoint },
 ) {
   if (method === 'GET' && url === '/health') {
     const health = getHealth();
     return { status: health.status === 'ready' ? 200 : 503, payload: health };
+  }
+  const statusMatch = url?.match(/^\/checkpoint-status\/(MS-0[12])$/);
+  if (method === 'GET' && statusMatch) {
+    try {
+      return { status: 200, payload: await getCheckpointStatus(statusMatch[1]) };
+    } catch (error) {
+      const bridgeError =
+        error instanceof BridgeError ? error : new BridgeError('INTERNAL_ERROR', 500);
+      return { status: bridgeError.status, payload: { status: 'failed', error: bridgeError.code } };
+    }
   }
   if (method !== 'POST' || url !== '/checkpoint') {
     return { status: 404, payload: { error: 'NOT_FOUND' } };
