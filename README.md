@@ -1,6 +1,5 @@
 # Midnight Swarm
 
-![Midnight Swarm logo](web/public/midnight-swarm-logo.png)
 
 **Private robot telemetry in. Verifiable mission progress out.**
 
